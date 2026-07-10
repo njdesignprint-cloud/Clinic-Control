@@ -10,49 +10,63 @@
   <div id="authScreen" class="auth-screen">
     <div class="auth-card">
       <div class="auth-header">
+        <div class="auth-brand-mark"><span></span></div>
         <div>
           <strong>Clinic Control</strong>
-          <p>Inicia sesión o regístrate para guardar los datos de tu clínica de forma segura.</p>
+          <p>Gestión clínica simple y segura.</p>
         </div>
       </div>
 
+      <div class="auth-tabs" role="tablist" aria-label="Acceso a la cuenta">
+        <button type="button" class="auth-tab active" data-auth-tab="login">Ingresar</button>
+        <button type="button" class="auth-tab" data-auth-tab="register">Crear cuenta</button>
+      </div>
+
       <div class="auth-forms">
-        <form id="loginForm" class="auth-form">
-          <h2>Ingresar</h2>
+        <form id="loginForm" class="auth-form active">
+          <div class="auth-form-title">
+            <h2>Bienvenido de nuevo</h2>
+            <p>Ingresa tus datos para continuar.</p>
+          </div>
           <label>
             Correo electrónico
-            <input id="loginEmail" type="email" placeholder="tu@clinica.com" required />
+            <input id="loginEmail" type="email" placeholder="nombre@clinica.com" autocomplete="email" required />
           </label>
           <label>
             Contraseña
-            <input id="loginPassword" type="password" placeholder="Contraseña" required />
+            <input id="loginPassword" type="password" placeholder="Ingresa tu contraseña" autocomplete="current-password" required />
           </label>
           <label class="password-toggle">
-            <input id="loginShowPassword" type="checkbox" /> Mostrar contraseña
+            <input id="loginShowPassword" type="checkbox" /> <span>Mostrar contraseña</span>
           </label>
-          <button class="btn primary" type="submit">Ingresar</button>
+          <button class="btn primary auth-submit" type="submit">Ingresar <span>→</span></button>
         </form>
 
         <form id="registerForm" class="auth-form">
-          <h2>Registrarse</h2>
+          <div class="auth-form-title">
+            <h2>Crea tu cuenta</h2>
+            <p>Empieza a organizar tu clínica en minutos.</p>
+          </div>
           <label>
             Correo electrónico
-            <input id="registerEmail" type="email" placeholder="tu@clinica.com" required />
+            <input id="registerEmail" type="email" placeholder="nombre@clinica.com" autocomplete="email" required />
           </label>
           <label>
             Contraseña
-            <input id="registerPassword" type="password" placeholder="Contraseña" required />
+            <input id="registerPassword" type="password" placeholder="Mínimo 6 caracteres" autocomplete="new-password" required />
           </label>
           <label>
             Confirmar contraseña
-            <input id="registerConfirm" type="password" placeholder="Repite la contraseña" required />
+            <input id="registerConfirm" type="password" placeholder="Repite tu contraseña" autocomplete="new-password" required />
           </label>
           <label class="password-toggle">
-            <input id="registerShowPassword" type="checkbox" /> Mostrar contraseña
+            <input id="registerShowPassword" type="checkbox" /> <span>Mostrar contraseña</span>
           </label>
-          <button class="btn dark" type="submit">Crear cuenta</button>
+          <button class="btn primary auth-submit" type="submit">Crear cuenta <span>→</span></button>
         </form>
       </div>
+
+      <p class="auth-security"><span>✓</span> Tus datos se almacenan de forma privada y segura.</p>
     </div>
   </div>
 

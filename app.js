@@ -118,6 +118,7 @@ function unsubscribeAll() {
 function showAuthScreen() {
   $("#authScreen").classList.remove("hidden");
   document.querySelector(".app-shell").classList.add("hidden");
+  showAuthForm("login");
 }
 
 function showAppScreen() {
@@ -727,6 +728,18 @@ $$(".nav-item").forEach((button) => button.addEventListener("click", () => showP
 $$("[data-go]").forEach((button) => button.addEventListener("click", () => showPage(button.dataset.go)));
 $$("[data-close]").forEach((button) => {
   button.addEventListener("click", () => document.getElementById(button.dataset.close).close());
+});
+
+function showAuthForm(name) {
+  $$(".auth-tab").forEach((tab) => tab.classList.toggle("active", tab.dataset.authTab === name));
+  $("#loginForm").classList.toggle("active", name === "login");
+  $("#registerForm").classList.toggle("active", name === "register");
+  const firstInput = name === "login" ? $("#loginEmail") : $("#registerEmail");
+  requestAnimationFrame(() => firstInput.focus());
+}
+
+$$("[data-auth-tab]").forEach((button) => {
+  button.addEventListener("click", () => showAuthForm(button.dataset.authTab));
 });
 
 $("#quickPatientBtn").addEventListener("click", () => openPatientDialog());
