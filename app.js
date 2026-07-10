@@ -1,7 +1,9 @@
 let state = { settings: {}, patients: [], visits: [] };
 let firestore = null;
 let auth = null;
-let unsubscribe = null;
+let unsubscribeSettings = null;
+let unsubscribePatients = null;
+let unsubscribeVisits = null;
 
 function uid() {
   if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
@@ -155,33 +157,27 @@ async function seedFirebase() {
 }
 
 function subscribeToRealtime() {
-  if (unsubscribe) {
-    unsubscribe();
-  }
+  if (unsubscribeSettings) unsubscribeSettings();
+  if (unsubscribePatients) unsubscribePatients();
+  if (unsubscribeVisits) unsubscribeVisits();
 
   const settingsRef = getCollectionRef("settings").doc("clinic");
   const patientsRef = getCollectionRef("patients");
   const visitsRef = getCollectionRef("visits");
 
-  unsubscribe = () => {
-    settingsRef.onSnapshot(() => {});
-    patientsRef.onSnapshot(() => {});
-    visitsRef.onSnapshot(() => {});
-  };
-
-  settingsRef.onSnapshot((doc) => {
+  unsubscribeSettings = settingsRef.onSnapshot((doc) => {
     if (doc.exists) {
       state.settings = doc.data() || {};
       render();
     }
   });
 
-  patientsRef.onSnapshot((snapshot) => {
+  unsubscribePatients = patientsRef.onSnapshot((snapshot) => {
     state.patients = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
     render();
   });
 
-  visitsRef.onSnapshot((snapshot) => {
+  unsubscribeVisits = visitsRef.onSnapshot((snapshot) => {
     state.visits = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
     render();
   });
@@ -200,6 +196,7 @@ async function load() {
     if (!settingsDoc.exists && patientsSnap.empty && visitsSnap.empty) {
       await seedFirebase();
       state = buildSeedState();
+      subscribeToRealtime();
       render();
       return;
     }

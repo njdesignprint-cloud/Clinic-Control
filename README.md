@@ -36,9 +36,9 @@ Aplicación web para gestionar pacientes, consultas, cobros y reportes de una cl
 
 1. Sube el proyecto a GitHub.
 2. Entra al repositorio y ve a Settings > Pages.
-3. En Source elige Deploy from a branch.
-4. Selecciona la rama principal y la carpeta /root.
-5. Guarda y espera a que GitHub genere la URL.
+3. En Source elige GitHub Actions.
+4. Guarda y espera a que el workflow publique la app.
+5. La URL quedará disponible en la sección Pages del repositorio.
 
 ## Nota
 
