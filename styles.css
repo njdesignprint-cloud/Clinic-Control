@@ -1265,6 +1265,43 @@ td small {
   box-shadow: 0 0 0 4px rgba(20, 184, 166, .13);
 }
 
+.consent-field {
+  display: flex !important;
+  grid-template-columns: none !important;
+  align-items: flex-start;
+  gap: 11px !important;
+  padding: 14px;
+  border: 1px solid #dbe5eb;
+  border-radius: 13px;
+  background: #f8fafc;
+  cursor: pointer;
+}
+
+.consent-field input {
+  width: 18px !important;
+  height: 18px;
+  min-height: 0 !important;
+  margin: 2px 0 0;
+  padding: 0 !important;
+  accent-color: var(--primary);
+}
+
+.consent-field span {
+  display: grid;
+  gap: 3px;
+}
+
+.consent-field strong {
+  color: #253247;
+  font-size: 13px;
+}
+
+.consent-field small {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 500;
+}
+
 dialog {
   border: 0;
   padding: 0;

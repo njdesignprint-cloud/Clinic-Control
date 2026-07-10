@@ -48,6 +48,10 @@
             <p>Empieza a organizar tu clínica en minutos.</p>
           </div>
           <label>
+            Nombre de la clínica
+            <input id="registerClinicName" type="text" placeholder="Ej. Clínica San José" autocomplete="organization" required />
+          </label>
+          <label>
             Correo electrónico
             <input id="registerEmail" type="email" placeholder="nombre@clinica.com" autocomplete="email" required />
           </label>
@@ -77,7 +81,7 @@
           <span></span>
         </div>
         <div>
-          <strong>Clinic Control</strong>
+          <strong id="clinicBrandName">Clinic Control</strong>
           <small>Medical OS</small>
         </div>
       </div>
@@ -134,7 +138,7 @@
         <div class="hero-pro">
           <div>
             <span class="pill">Hoy</span>
-            <h2>Control diario de la clínica</h2>
+            <h2 id="heroClinicTitle">Control diario de la clínica</h2>
             <p>Una vista limpia para recepción: pacientes, consultas, cobros pendientes y cierre del día.</p>
           </div>
           <div class="hero-actions">
@@ -373,6 +377,11 @@
           <input id="patientPhone" type="tel" placeholder="Ej. (555) 123-4567" autocomplete="tel" />
           <small class="field-hint">Incluye el código de área</small>
         </label>
+        <label class="field-group">Correo electrónico
+          <input id="patientEmail" type="email" placeholder="paciente@correo.com" autocomplete="email" />
+          <small class="field-hint">Se usará para enviar la felicitación de cumpleaños</small>
+          <small class="field-error" id="patientEmailError"></small>
+        </label>
         <label class="field-group">Edad
           <input id="patientAge" type="number" min="0" max="120" placeholder="Ej. 35" />
           <small class="field-error" id="patientAgeError"></small>
@@ -392,6 +401,10 @@
             <option value="Inglés">Inglés</option>
           </select>
           <small class="field-hint">Idioma para comunicarse con el paciente</small>
+        </label>
+        <label class="consent-field full">
+          <input id="patientBirthdayEmail" type="checkbox" />
+          <span><strong>Enviar felicitación de cumpleaños</strong><small>El paciente autoriza recibir un correo automático en su idioma preferido.</small></span>
         </label>
         <label class="field-group full">Notas
           <textarea id="patientNotes" rows="3" placeholder="Información médica o administrativa relevante"></textarea>
@@ -436,6 +449,17 @@
         </label>
         <label class="field-group">Doctor
           <input id="visitDoctor" type="text" placeholder="Ej. Dra. Ana Martínez" />
+        </label>
+        <label class="field-group required"><span class="field-label">Estado <b>*</b></span>
+          <select id="visitStatus" required>
+            <option value="Programada">Programada</option>
+            <option value="Completada">Completada</option>
+            <option value="Cancelada">Cancelada</option>
+          </select>
+        </label>
+        <label class="consent-field">
+          <input id="visitReminderEnabled" type="checkbox" checked />
+          <span><strong>Recordatorio por correo</strong><small>Enviar 24 horas antes si el paciente tiene correo.</small></span>
         </label>
         </div>
 

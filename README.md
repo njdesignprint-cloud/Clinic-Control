@@ -54,3 +54,22 @@ service cloud.firestore {
   }
 }
 ```
+
+## Correos automáticos de cumpleaños
+
+La función `sendBirthdayEmails` revisa todos los días a las 9:00 a. m. (America/Chicago) los pacientes que:
+
+- tienen fecha de nacimiento y correo electrónico;
+- autorizaron la felicitación automática;
+- cumplen años ese día.
+
+El correo se genera en Español o Inglés y solo se crea una vez por paciente y año.
+
+Para activar la entrega:
+
+1. Cambia el proyecto de Firebase al plan Blaze, necesario para funciones programadas.
+2. Instala las dependencias con `npm install --prefix functions`.
+3. Instala en Firebase la extensión oficial **Trigger Email from Firestore**, usando `mail` como colección y configurando un proveedor SMTP.
+4. Despliega la función con `firebase deploy --only functions:sendBirthdayEmails`.
+
+Las credenciales SMTP deben configurarse en Firebase; nunca deben agregarse a `app.js` ni a `firebase-config.js`.

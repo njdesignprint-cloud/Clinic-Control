@@ -473,12 +473,12 @@ function renderFinanceBars(data) {
 
 function renderPatients() {
   const query = ($("#patientSearch")?.value || "").toLowerCase().trim();
-  const rows = state.patients.filter((p) => `${p.name} ${p.phone} ${p.document} ${p.language || ""}`.toLowerCase().includes(query));
+  const rows = state.patients.filter((p) => `${p.name} ${p.phone} ${p.email || ""} ${p.document} ${p.language || ""}`.toLowerCase().includes(query));
 
   $("#patientsTable").innerHTML = rows.length ? rows.map((p) => `
     <tr>
       <td><strong>${p.name}</strong><br><small>${p.notes || "Sin notas"}</small></td>
-      <td>${p.phone || "-"}</td>
+      <td>${p.phone || "-"}<br><small>${p.email || "Sin correo"}</small></td>
       <td>${fmtBirthDate(p.birthDate)}<br><small>${p.age !== "" && p.age != null ? `${p.age} años` : "Edad no indicada"}</small></td>
       <td><span class="badge blue">${p.language || "No indicado"}</span></td>
       <td>${p.document || "-"}</td>
@@ -514,7 +514,7 @@ function renderVisits() {
       <tr>
         <td>${fmtDate(visit.date)}</td>
         <td><strong>${p?.name || "Paciente eliminado"}</strong><br><small>${visit.doctor || "Sin doctor asignado"}</small></td>
-        <td><span class="badge ${visit.type === "Teleconsulta" ? "blue" : "green"}">${visit.type}</span></td>
+        <td><span class="badge ${visit.type === "Teleconsulta" ? "blue" : "green"}">${visit.type}</span><br><small>${visit.status || "Completada"}</small></td>
         <td>${visit.reason}</td>
         <td>${money(visit.total)}</td>
         <td>${money(visit.paid)}</td>
@@ -620,6 +620,12 @@ function renderReports() {
 }
 
 function renderSettings() {
+  const clinicName = state.settings.clinicName || "Clinic Control";
+  $("#clinicBrandName").textContent = clinicName;
+  $("#heroClinicTitle").textContent = state.settings.clinicName
+    ? `Control diario de ${state.settings.clinicName}`
+    : "Control diario de la clínica";
+  document.title = `${clinicName} · Clinic Control`;
   $("#clinicName").value = state.settings.clinicName || "";
   $("#clinicAddress").value = state.settings.clinicAddress || "";
   $("#clinicPhone").value = state.settings.clinicPhone || "";
@@ -632,10 +638,12 @@ function openPatientDialog(p = null) {
   $("#patientId").value = p?.id || "";
   $("#patientName").value = p?.name || "";
   $("#patientPhone").value = p?.phone || "";
+  $("#patientEmail").value = p?.email || "";
   $("#patientAge").value = p?.age ?? "";
   $("#patientBirthDate").value = p?.birthDate || "";
   $("#patientBirthDate").max = today();
   $("#patientLanguage").value = p?.language || "Español";
+  $("#patientBirthdayEmail").checked = Boolean(p?.birthdayEmailEnabled);
   $("#patientDocument").value = p?.document || "";
   $("#patientNotes").value = p?.notes || "";
   clearFormErrors($("#patientForm"));
@@ -658,6 +666,8 @@ function openVisitDialog(visit = null) {
   $("#visitType").value = visit?.type || "Presencial";
   $("#visitDate").value = visit?.date || new Date().toISOString().slice(0, 16);
   $("#visitDoctor").value = visit?.doctor || "";
+  $("#visitStatus").value = visit?.status || (visit ? "Completada" : "Programada");
+  $("#visitReminderEnabled").checked = visit ? Boolean(visit.reminderEnabled) : true;
   $("#visitTotal").value = visit?.total ?? "";
   $("#visitPaid").value = visit?.paid ?? 0;
   $("#visitReason").value = visit?.reason || "";
@@ -690,14 +700,20 @@ function validatePatientForm() {
   const name = $("#patientName");
   const age = $("#patientAge");
   const birthDate = $("#patientBirthDate");
+  const email = $("#patientEmail");
+  const birthdayEmailEnabled = $("#patientBirthdayEmail").checked;
   const trimmedName = name.value.trim();
   const ageNumber = age.value === "" ? null : Number(age.value);
   const birthDateMessage = birthDate.value && birthDate.value > today() ? "La fecha de nacimiento no puede ser futura." : "";
+  const emailMessage = birthdayEmailEnabled && !email.value.trim()
+    ? "Agrega un correo para activar las felicitaciones."
+    : (email.value && !email.validity.valid ? "Escribe un correo electrónico válido." : "");
 
   setFieldError(name, $("#patientNameError"), trimmedName.length < 2 ? "Escribe el nombre completo del paciente." : "");
   setFieldError(age, $("#patientAgeError"), ageNumber !== null && (ageNumber < 0 || ageNumber > 120) ? "La edad debe estar entre 0 y 120 años." : "");
   setFieldError(birthDate, $("#patientBirthDateError"), birthDateMessage);
-  return trimmedName.length >= 2 && !birthDateMessage && (ageNumber === null || (ageNumber >= 0 && ageNumber <= 120));
+  setFieldError(email, $("#patientEmailError"), emailMessage);
+  return trimmedName.length >= 2 && !birthDateMessage && !emailMessage && (ageNumber === null || (ageNumber >= 0 && ageNumber <= 120));
 }
 
 function validateVisitForm() {
@@ -790,6 +806,8 @@ $("#globalSearch").addEventListener("input", (event) => {
 
 $("#patientName").addEventListener("input", validatePatientForm);
 $("#patientAge").addEventListener("input", validatePatientForm);
+$("#patientEmail").addEventListener("input", validatePatientForm);
+$("#patientBirthdayEmail").addEventListener("change", validatePatientForm);
 $("#patientBirthDate").addEventListener("change", () => {
   const calculatedAge = ageFromBirthDate($("#patientBirthDate").value);
   if (calculatedAge !== "" && calculatedAge >= 0) $("#patientAge").value = calculatedAge;
@@ -809,9 +827,11 @@ $("#patientForm").addEventListener("submit", async (event) => {
     id: id || uid(),
     name: $("#patientName").value.trim(),
     phone: $("#patientPhone").value.trim(),
+    email: $("#patientEmail").value.trim().toLowerCase(),
     age: $("#patientAge").value,
     birthDate: $("#patientBirthDate").value,
     language: $("#patientLanguage").value,
+    birthdayEmailEnabled: $("#patientBirthdayEmail").checked,
     document: $("#patientDocument").value.trim(),
     notes: $("#patientNotes").value.trim(),
     createdAt: id ? state.patients.find((p) => p.id === id)?.createdAt : new Date().toISOString()
@@ -843,6 +863,8 @@ $("#visitForm").addEventListener("submit", async (event) => {
     type: $("#visitType").value,
     date: $("#visitDate").value,
     doctor: $("#visitDoctor").value.trim(),
+    status: $("#visitStatus").value,
+    reminderEnabled: $("#visitReminderEnabled").checked,
     reason: $("#visitReason").value.trim(),
     notes: $("#visitNotes").value.trim(),
     total,
@@ -920,12 +942,18 @@ $("#loginForm").addEventListener("submit", async (event) => {
 
 $("#registerForm").addEventListener("submit", async (event) => {
   event.preventDefault();
+  const clinicName = $("#registerClinicName").value.trim();
   const email = $("#registerEmail").value.trim();
   const password = $("#registerPassword").value;
   const confirm = $("#registerConfirm").value;
 
-  if (!email || !password || !confirm) {
+  if (!clinicName || !email || !password || !confirm) {
     toast("Completa todos los campos de registro.");
+    return;
+  }
+
+  if (clinicName.length < 2) {
+    toast("Escribe un nombre válido para la clínica.");
     return;
   }
 
@@ -941,7 +969,15 @@ $("#registerForm").addEventListener("submit", async (event) => {
 
   try {
     initFirebase();
-    await auth.createUserWithEmailAndPassword(email, password);
+    const credential = await auth.createUserWithEmailAndPassword(email, password);
+    await firestore.collection("clinics").doc(credential.user.uid).collection("settings").doc("clinic").set({
+      clinicName,
+      clinicAddress: "",
+      clinicPhone: "",
+      clinicEmail: email
+    }, { merge: true });
+    state.settings = { ...state.settings, clinicName, clinicEmail: email };
+    render();
     toast("Cuenta creada. Bienvenido.");
   } catch (error) {
     console.error(error);
