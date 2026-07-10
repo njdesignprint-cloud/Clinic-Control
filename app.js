@@ -106,6 +106,11 @@ function initFirebase() {
     throw new Error("Firebase no está configurado.");
   }
 
+  // Evita volver a configurar Firestore en cada intento de acceso.
+  if (firestore && auth) {
+    return { firestore, auth };
+  }
+
   if (!firebase.apps.length) {
     firebase.initializeApp(window.firebaseConfig);
   }
@@ -114,13 +119,30 @@ function initFirebase() {
   auth = firebase.auth();
   firestore.settings({ experimentalAutoDetectLongPolling: true });
 
-  try {
-    firestore.enablePersistence({ synchronizeTabs: true });
-  } catch (error) {
+  firestore.enablePersistence({ synchronizeTabs: true }).catch((error) => {
     console.warn("Persistencia offline no disponible:", error);
-  }
+  });
 
   return { firestore, auth };
+}
+
+function getAuthErrorMessage(error, action = "login") {
+  const messages = {
+    "auth/email-already-in-use": "Ya existe una cuenta con este correo.",
+    "auth/invalid-email": "El correo electrónico no es válido.",
+    "auth/weak-password": "La contraseña debe tener al menos 6 caracteres.",
+    "auth/operation-not-allowed": "El registro con correo y contraseña no está habilitado en Firebase.",
+    "auth/network-request-failed": "No se pudo conectar con Firebase. Revisa tu conexión.",
+    "auth/too-many-requests": "Se hicieron demasiados intentos. Espera un momento e inténtalo de nuevo.",
+    "auth/invalid-credential": "El correo o la contraseña son incorrectos.",
+    "auth/user-disabled": "Esta cuenta está deshabilitada."
+  };
+
+  return messages[error?.code]
+    || error?.message
+    || (action === "register"
+      ? "No se pudo crear la cuenta. Revisa los datos."
+      : "No se pudo iniciar sesión. Verifica tus datos.");
 }
 
 async function ensureAuth() {
@@ -835,7 +857,7 @@ $("#loginForm").addEventListener("submit", async (event) => {
     toast("Sesión iniciada");
   } catch (error) {
     console.error(error);
-    toast(error.message || "No se pudo iniciar sesión. Verifica tus datos.");
+    toast(getAuthErrorMessage(error));
   }
 });
 
@@ -866,8 +888,7 @@ $("#registerForm").addEventListener("submit", async (event) => {
     toast("Cuenta creada. Bienvenido.");
   } catch (error) {
     console.error(error);
-    const message = error?.message || "No se pudo crear la cuenta. Revisa los datos.";
-    toast(message);
+    toast(getAuthErrorMessage(error, "register"));
   }
 });
 
