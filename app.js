@@ -376,12 +376,17 @@ function renderTimeline() {
 
   box.innerHTML = visits.map((visit) => {
     const p = patient(visit.patientId);
+    const isPaid = balance(visit) <= 0;
     return `
       <div class="timeline-item">
         <div class="timeline-icon">${visit.type === "Teleconsulta" ? "T" : "P"}</div>
         <div>
           <strong>${p?.name || "Paciente eliminado"}</strong>
-          <span>${visit.reason} · ${fmtDate(visit.date)}</span>
+          <span>${visit.reason || "Consulta"} · ${fmtDate(visit.date)}</span>
+          <div class="timeline-meta">
+            <span class="payment-status ${isPaid ? "" : "pending"}">${isPaid ? "Pagado" : "Pago pendiente"}</span>
+            <span>${visit.type || "Presencial"}${visit.doctor ? ` · ${visit.doctor}` : ""}</span>
+          </div>
         </div>
         <div class="amount">${money(visit.total)}</div>
       </div>

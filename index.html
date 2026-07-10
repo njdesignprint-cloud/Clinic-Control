@@ -70,7 +70,7 @@
 
       <nav class="nav">
         <button class="nav-item active" data-page="dashboard">
-          <span>⌘</span> Dashboard
+          <span>⌂</span> Dashboard
         </button>
         <button class="nav-item" data-page="patients">
           <span>●</span> Pacientes
@@ -90,8 +90,8 @@
       </nav>
 
       <div class="sidebar-card">
-        <small>Estado del sistema</small>
-        <strong>Operativo</strong>
+        <small>Clinic Control Cloud</small>
+        <strong>Todo operativo</strong>
         <div class="status-dot"></div>
       </div>
     </aside>
@@ -108,10 +108,11 @@
           <div class="global-search">
             <span>⌕</span>
             <input id="globalSearch" type="search" placeholder="Buscar paciente, consulta o teléfono..." />
+            <kbd>⌘ K</kbd>
           </div>
-          <button class="btn light" id="exportBtn">Exportar</button>
-          <button class="btn light" id="logoutBtn">Cerrar sesión</button>
-          <button class="btn primary" id="quickVisitBtn">Nueva consulta</button>
+          <button class="btn light compact-action" id="exportBtn" title="Exportar datos">⇩ <span>Exportar</span></button>
+          <button class="btn light compact-action" id="logoutBtn" title="Cerrar sesión">↗ <span>Salir</span></button>
+          <button class="btn primary" id="quickVisitBtn"><span class="button-plus">+</span> Nueva consulta</button>
         </div>
       </header>
 
@@ -130,21 +131,25 @@
 
         <div class="kpi-grid">
           <article class="kpi-card">
+            <span class="kpi-icon patients-icon">●</span>
             <span class="kpi-label">Pacientes activos</span>
             <strong id="kpiPatients">0</strong>
             <small id="kpiPatientsHint">Base actual</small>
           </article>
           <article class="kpi-card">
+            <span class="kpi-icon visits-icon">◆</span>
             <span class="kpi-label">Consultas hoy</span>
             <strong id="kpiTodayVisits">0</strong>
             <small id="kpiVisitMix">0 presenciales · 0 teleconsulta</small>
           </article>
           <article class="kpi-card">
+            <span class="kpi-icon paid-icon">$</span>
             <span class="kpi-label">Cobrado hoy</span>
             <strong id="kpiTodayPaid">$0.00</strong>
             <small>Pagos registrados</small>
           </article>
           <article class="kpi-card accent">
+            <span class="kpi-icon debt-icon">!</span>
             <span class="kpi-label">Saldo pendiente</span>
             <strong id="kpiBalance">$0.00</strong>
             <small id="kpiBalanceHint">Por cobrar</small>
@@ -171,10 +176,10 @@
               </div>
             </div>
             <div class="quick-panel">
-              <button id="dashNewPatient">Registrar paciente</button>
-              <button id="dashNewVisit">Agregar consulta</button>
-              <button data-go="billing">Revisar deudas</button>
-              <button data-go="reports">Cierre del día</button>
+              <button id="dashNewPatient"><span>+</span><div>Registrar paciente<small>Crear nueva ficha</small></div><b>›</b></button>
+              <button id="dashNewVisit"><span>◆</span><div>Agregar consulta<small>Programar atención</small></div><b>›</b></button>
+              <button data-go="billing"><span>$</span><div>Revisar deudas<small>Ver saldos pendientes</small></div><b>›</b></button>
+              <button data-go="reports"><span>▣</span><div>Cierre del día<small>Resumen financiero</small></div><b>›</b></button>
             </div>
           </article>
 
