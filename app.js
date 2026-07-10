@@ -11,79 +11,15 @@ function uid() {
 }
 
 function buildSeedState() {
-  const patients = [
-    {
-      id: uid(),
-      name: "Oscar Arrate Fernandez",
-      phone: "5029997421",
-      age: 37,
-      document: "P-1001",
-      notes: "Paciente activo.",
-      createdAt: "2026-07-03T20:49"
-    },
-    {
-      id: uid(),
-      name: "Maria Perez",
-      phone: "35624546",
-      age: "",
-      document: "P-1002",
-      notes: "",
-      createdAt: "2026-06-20T23:09"
-    },
-    {
-      id: uid(),
-      name: "Pedro Perez Garcia",
-      phone: "8325135901",
-      age: 46,
-      document: "P-1003",
-      notes: "Saldo pendiente.",
-      createdAt: "2026-06-15T19:26"
-    }
-  ];
-
   return {
     settings: {
-      clinicName: "Clinic Control",
-      clinicAddress: "Dirección de la clínica",
-      clinicPhone: "(000) 000-0000",
-      clinicEmail: "admin@clinic.com"
+      clinicName: "",
+      clinicAddress: "",
+      clinicPhone: "",
+      clinicEmail: ""
     },
-    patients,
-    visits: [
-      {
-        id: uid(),
-        patientId: patients[0].id,
-        type: "Presencial",
-        date: "2026-07-03T20:49",
-        doctor: "Dr. Admin",
-        reason: "Consulta general",
-        notes: "Sin observaciones.",
-        total: 25,
-        paid: 25
-      },
-      {
-        id: uid(),
-        patientId: patients[1].id,
-        type: "Presencial",
-        date: "2026-06-20T23:09",
-        doctor: "Dr. Admin",
-        reason: "Chequeo",
-        notes: "",
-        total: 500,
-        paid: 500
-      },
-      {
-        id: uid(),
-        patientId: patients[2].id,
-        type: "Teleconsulta",
-        date: "2026-06-15T19:26",
-        doctor: "Dr. Admin",
-        reason: "Seguimiento médico",
-        notes: "Pendiente de pago.",
-        total: 500,
-        paid: 200
-      }
-    ]
+    patients: [],
+    visits: []
   };
 }
 
@@ -117,7 +53,6 @@ function initFirebase() {
 
   firestore = firebase.firestore();
   auth = firebase.auth();
-  firestore.settings({ experimentalAutoDetectLongPolling: true });
 
   firestore.enablePersistence({ synchronizeTabs: true }).catch((error) => {
     console.warn("Persistencia offline no disponible:", error);
@@ -195,22 +130,6 @@ function clearState() {
   render();
 }
 
-async function seedFirebase() {
-  const seed = buildSeedState();
-  const batch = firestore.batch();
-  batch.set(getClinicDocRef().collection("settings").doc("clinic"), seed.settings, { merge: true });
-
-  seed.patients.forEach((patient) => {
-    batch.set(getCollectionRef("patients").doc(patient.id), patient, { merge: true });
-  });
-
-  seed.visits.forEach((visit) => {
-    batch.set(getCollectionRef("visits").doc(visit.id), visit, { merge: true });
-  });
-
-  await batch.commit();
-}
-
 function subscribeToRealtime() {
   unsubscribeAll();
 
@@ -236,6 +155,34 @@ function subscribeToRealtime() {
   });
 }
 
+async function removeLegacyDemoData(settingsDoc, patientsSnap, visitsSnap) {
+  const demoPatients = new Map([
+    ["P-1001", "Oscar Arrate Fernandez"],
+    ["P-1002", "Maria Perez"],
+    ["P-1003", "Pedro Perez Garcia"]
+  ]);
+  const demoPatientDocs = patientsSnap.docs.filter((doc) => {
+    const data = doc.data();
+    return demoPatients.get(data.document) === data.name;
+  });
+  const demoPatientIds = new Set(demoPatientDocs.map((doc) => doc.id));
+  const demoVisitDocs = visitsSnap.docs.filter((doc) => demoPatientIds.has(doc.data().patientId));
+  const settings = settingsDoc.exists ? settingsDoc.data() : {};
+  const hasDemoSettings = settings.clinicName === "Clinic Control"
+    && settings.clinicAddress === "Dirección de la clínica"
+    && settings.clinicPhone === "(000) 000-0000"
+    && settings.clinicEmail === "admin@clinic.com";
+
+  if (!demoPatientDocs.length && !demoVisitDocs.length && !hasDemoSettings) return false;
+
+  const batch = firestore.batch();
+  demoPatientDocs.forEach((doc) => batch.delete(doc.ref));
+  demoVisitDocs.forEach((doc) => batch.delete(doc.ref));
+  if (hasDemoSettings) batch.delete(settingsDoc.ref);
+  await batch.commit();
+  return true;
+}
+
 async function loadClinicData() {
   await ensureAuth();
 
@@ -249,8 +196,14 @@ async function loadClinicData() {
     visitsRef.get()
   ]);
 
+  if (await removeLegacyDemoData(settingsDoc, patientsSnap, visitsSnap)) {
+    state = buildSeedState();
+    subscribeToRealtime();
+    render();
+    return;
+  }
+
   if (!settingsDoc.exists && patientsSnap.empty && visitsSnap.empty) {
-    await seedFirebase();
     state = buildSeedState();
     subscribeToRealtime();
     render();
