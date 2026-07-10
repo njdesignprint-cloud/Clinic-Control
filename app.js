@@ -855,6 +855,16 @@ $("#registerForm").addEventListener("submit", async (event) => {
   }
 });
 
+$("#loginShowPassword").addEventListener("change", (event) => {
+  $("#loginPassword").type = event.target.checked ? "text" : "password";
+});
+
+$("#registerShowPassword").addEventListener("change", (event) => {
+  const show = event.target.checked;
+  $("#registerPassword").type = show ? "text" : "password";
+  $("#registerConfirm").type = show ? "text" : "password";
+});
+
 function handleAuthState(user) {
   if (user) {
     updateUserInfo();
