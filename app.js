@@ -824,13 +824,18 @@ $("#loginForm").addEventListener("submit", async (event) => {
   const email = $("#loginEmail").value.trim();
   const password = $("#loginPassword").value;
 
+  if (!email || !password) {
+    toast("Ingresa correo y contraseña.");
+    return;
+  }
+
   try {
     initFirebase();
     await auth.signInWithEmailAndPassword(email, password);
     toast("Sesión iniciada");
   } catch (error) {
     console.error(error);
-    toast("No se pudo iniciar sesión. Verifica tus datos.");
+    toast(error.message || "No se pudo iniciar sesión. Verifica tus datos.");
   }
 });
 
@@ -840,8 +845,18 @@ $("#registerForm").addEventListener("submit", async (event) => {
   const password = $("#registerPassword").value;
   const confirm = $("#registerConfirm").value;
 
+  if (!email || !password || !confirm) {
+    toast("Completa todos los campos de registro.");
+    return;
+  }
+
   if (password !== confirm) {
     toast("Las contraseñas no coinciden.");
+    return;
+  }
+
+  if (password.length < 6) {
+    toast("La contraseña debe tener al menos 6 caracteres.");
     return;
   }
 
@@ -851,7 +866,8 @@ $("#registerForm").addEventListener("submit", async (event) => {
     toast("Cuenta creada. Bienvenido.");
   } catch (error) {
     console.error(error);
-    toast("No se pudo crear la cuenta. Revisa los datos.");
+    const message = error?.message || "No se pudo crear la cuenta. Revisa los datos.";
+    toast(message);
   }
 });
 
