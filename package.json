@@ -1,0 +1,13 @@
+{
+  "name": "clinic-control",
+  "version": "1.0.0",
+  "description": "Clinic Control con base de datos SQLite",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.0",
+    "sqlite3": "^5.1.7"
+  }
+}

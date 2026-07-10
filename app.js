@@ -1,11 +1,14 @@
-const KEY = "clinic-control-pro-v2";
+let state = { settings: {}, patients: [], visits: [] };
+let firestore = null;
+let auth = null;
+let unsubscribe = null;
 
-const uid = () => {
+function uid() {
   if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
   return `id-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-};
+}
 
-const seed = (() => {
+function buildSeedState() {
   const patients = [
     {
       id: uid(),
@@ -80,27 +83,173 @@ const seed = (() => {
       }
     ]
   };
-})();
+}
 
-let state = load();
+function normalizeState(saved) {
+  const seed = buildSeedState();
+  return {
+    settings: {
+      clinicName: saved?.settings?.clinicName || seed.settings.clinicName,
+      clinicAddress: saved?.settings?.clinicAddress || seed.settings.clinicAddress,
+      clinicPhone: saved?.settings?.clinicPhone || seed.settings.clinicPhone,
+      clinicEmail: saved?.settings?.clinicEmail || seed.settings.clinicEmail
+    },
+    patients: Array.isArray(saved?.patients) ? saved.patients : seed.patients,
+    visits: Array.isArray(saved?.visits) ? saved.visits : seed.visits
+  };
+}
 
-function load() {
-  const saved = localStorage.getItem(KEY);
-  if (!saved) {
-    localStorage.setItem(KEY, JSON.stringify(seed));
-    return structuredClone(seed);
+function initFirebase() {
+  if (!window.firebaseConfig || !window.firebase) {
+    throw new Error("Firebase no está configurado.");
   }
 
+  if (!firebase.apps.length) {
+    firebase.initializeApp(window.firebaseConfig);
+  }
+
+  firestore = firebase.firestore();
+  auth = firebase.auth();
+  firestore.settings({ experimentalAutoDetectLongPolling: true });
+
   try {
-    return JSON.parse(saved);
+    firestore.enablePersistence({ synchronizeTabs: true });
   } catch (error) {
-    localStorage.setItem(KEY, JSON.stringify(seed));
-    return structuredClone(seed);
+    console.warn("Persistencia offline no disponible:", error);
+  }
+
+  return { firestore, auth };
+}
+
+async function ensureAuth() {
+  if (!auth) {
+    initFirebase();
+  }
+
+  if (!auth.currentUser) {
+    await auth.signInAnonymously();
   }
 }
 
-function save() {
-  localStorage.setItem(KEY, JSON.stringify(state));
+function getCollectionRef(collectionName) {
+  if (!firestore) {
+    initFirebase();
+  }
+  return firestore.collection(collectionName);
+}
+
+async function seedFirebase() {
+  const seed = buildSeedState();
+  const batch = firestore.batch();
+  batch.set(getCollectionRef("settings").doc("clinic"), seed.settings, { merge: true });
+
+  seed.patients.forEach((patient) => {
+    batch.set(getCollectionRef("patients").doc(patient.id), patient, { merge: true });
+  });
+
+  seed.visits.forEach((visit) => {
+    batch.set(getCollectionRef("visits").doc(visit.id), visit, { merge: true });
+  });
+
+  await batch.commit();
+}
+
+function subscribeToRealtime() {
+  if (unsubscribe) {
+    unsubscribe();
+  }
+
+  const settingsRef = getCollectionRef("settings").doc("clinic");
+  const patientsRef = getCollectionRef("patients");
+  const visitsRef = getCollectionRef("visits");
+
+  unsubscribe = () => {
+    settingsRef.onSnapshot(() => {});
+    patientsRef.onSnapshot(() => {});
+    visitsRef.onSnapshot(() => {});
+  };
+
+  settingsRef.onSnapshot((doc) => {
+    if (doc.exists) {
+      state.settings = doc.data() || {};
+      render();
+    }
+  });
+
+  patientsRef.onSnapshot((snapshot) => {
+    state.patients = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+    render();
+  });
+
+  visitsRef.onSnapshot((snapshot) => {
+    state.visits = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+    render();
+  });
+}
+
+async function load() {
+  try {
+    await ensureAuth();
+
+    const [settingsDoc, patientsSnap, visitsSnap] = await Promise.all([
+      getCollectionRef("settings").doc("clinic").get(),
+      getCollectionRef("patients").get(),
+      getCollectionRef("visits").get()
+    ]);
+
+    if (!settingsDoc.exists && patientsSnap.empty && visitsSnap.empty) {
+      await seedFirebase();
+      state = buildSeedState();
+      render();
+      return;
+    }
+
+    state = normalizeState({
+      settings: settingsDoc.exists ? settingsDoc.data() : {},
+      patients: patientsSnap.docs.map((doc) => ({ id: doc.id, ...doc.data() })),
+      visits: visitsSnap.docs.map((doc) => ({ id: doc.id, ...doc.data() }))
+    });
+
+    subscribeToRealtime();
+    render();
+  } catch (error) {
+    console.error(error);
+    state = normalizeState(null);
+  }
+}
+
+async function save() {
+  await ensureAuth();
+  await getCollectionRef("settings").doc("clinic").set(state.settings, { merge: true });
+}
+
+async function savePatient(data) {
+  await ensureAuth();
+  await getCollectionRef("patients").doc(data.id).set({ ...data }, { merge: true });
+}
+
+async function saveVisit(data) {
+  await ensureAuth();
+  await getCollectionRef("visits").doc(data.id).set({ ...data }, { merge: true });
+}
+
+async function saveSettings() {
+  await ensureAuth();
+  await getCollectionRef("settings").doc("clinic").set(state.settings, { merge: true });
+}
+
+async function deletePatientEntry(id) {
+  await ensureAuth();
+  const visitSnap = await getCollectionRef("visits").where("patientId", "==", id).get();
+  const batch = firestore.batch();
+  batch.delete(getCollectionRef("patients").doc(id));
+  visitSnap.docs.forEach((doc) => batch.delete(getCollectionRef("visits").doc(doc.id)));
+  await batch.commit();
+}
+
+async function deleteVisitEntry(id) {
+  await ensureAuth();
+  await getCollectionRef("visits").doc(id).delete();
 }
 
 const $ = (selector) => document.querySelector(selector);
@@ -477,13 +626,16 @@ function editPatient(id) {
   if (p) openPatientDialog(p);
 }
 
-function deletePatient(id) {
+async function deletePatient(id) {
   if (!confirm("¿Eliminar este paciente y sus consultas relacionadas?")) return;
-  state.patients = state.patients.filter((item) => item.id !== id);
-  state.visits = state.visits.filter((item) => item.patientId !== id);
-  save();
-  render();
-  toast("Paciente eliminado");
+  try {
+    await deletePatientEntry(id);
+    render();
+    toast("Paciente eliminado");
+  } catch (error) {
+    console.error(error);
+    toast("No se pudo eliminar el paciente");
+  }
 }
 
 function editVisit(id) {
@@ -491,12 +643,16 @@ function editVisit(id) {
   if (visit) openVisitDialog(visit);
 }
 
-function deleteVisit(id) {
+async function deleteVisit(id) {
   if (!confirm("¿Eliminar esta consulta?")) return;
-  state.visits = state.visits.filter((item) => item.id !== id);
-  save();
-  render();
-  toast("Consulta eliminada");
+  try {
+    await deleteVisitEntry(id);
+    render();
+    toast("Consulta eliminada");
+  } catch (error) {
+    console.error(error);
+    toast("No se pudo eliminar la consulta");
+  }
 }
 
 window.editPatient = editPatient;
@@ -529,7 +685,7 @@ $("#globalSearch").addEventListener("input", (event) => {
   showPage("patients");
 });
 
-$("#patientForm").addEventListener("submit", (event) => {
+$("#patientForm").addEventListener("submit", async (event) => {
   event.preventDefault();
 
   const id = $("#patientId").value;
@@ -543,20 +699,18 @@ $("#patientForm").addEventListener("submit", (event) => {
     createdAt: id ? state.patients.find((p) => p.id === id)?.createdAt : new Date().toISOString()
   };
 
-  if (id) {
-    state.patients = state.patients.map((p) => p.id === id ? data : p);
-    toast("Paciente actualizado");
-  } else {
-    state.patients.push(data);
-    toast("Paciente registrado");
+  try {
+    await savePatient(data);
+    $("#patientDialog").close();
+    render();
+    toast(id ? "Paciente actualizado" : "Paciente registrado");
+  } catch (error) {
+    console.error(error);
+    toast("No se pudo guardar el paciente");
   }
-
-  save();
-  $("#patientDialog").close();
-  render();
 });
 
-$("#visitForm").addEventListener("submit", (event) => {
+$("#visitForm").addEventListener("submit", async (event) => {
   event.preventDefault();
 
   const total = Number($("#visitTotal").value || 0);
@@ -580,20 +734,18 @@ $("#visitForm").addEventListener("submit", (event) => {
     paid
   };
 
-  if (id) {
-    state.visits = state.visits.map((visit) => visit.id === id ? data : visit);
-    toast("Consulta actualizada");
-  } else {
-    state.visits.push(data);
-    toast("Consulta registrada");
+  try {
+    await saveVisit(data);
+    $("#visitDialog").close();
+    render();
+    toast(id ? "Consulta actualizada" : "Consulta registrada");
+  } catch (error) {
+    console.error(error);
+    toast("No se pudo guardar la consulta");
   }
-
-  save();
-  $("#visitDialog").close();
-  render();
 });
 
-$("#settingsForm").addEventListener("submit", (event) => {
+$("#settingsForm").addEventListener("submit", async (event) => {
   event.preventDefault();
 
   state.settings = {
@@ -603,9 +755,14 @@ $("#settingsForm").addEventListener("submit", (event) => {
     clinicEmail: $("#clinicEmail").value.trim()
   };
 
-  save();
-  render();
-  toast("Ajustes guardados");
+  try {
+    await saveSettings();
+    render();
+    toast("Ajustes guardados");
+  } catch (error) {
+    console.error(error);
+    toast("No se pudieron guardar los ajustes");
+  }
 });
 
 $("#exportBtn").addEventListener("click", () => {
@@ -618,4 +775,12 @@ $("#exportBtn").addEventListener("click", () => {
   URL.revokeObjectURL(url);
 });
 
-render();
+(async () => {
+  try {
+    await load();
+    render();
+  } catch (error) {
+    console.error(error);
+    toast("No se pudo conectar con Firebase");
+  }
+})();

@@ -1,34 +1,56 @@
-# Clinic Control Pro Starter
+# Clinic Control
 
-Versión rediseñada con apariencia más profesional y menos parecida al ejemplo original.
+Aplicación web para gestionar pacientes, consultas, cobros y reportes de una clínica.
 
 ## Qué incluye
 
-- Dashboard moderno tipo SaaS
-- Pacientes
-- Consultas
-- Cobros y balances
+- Dashboard moderno
+- Directorio de pacientes
+- Registro de consultas
+- Seguimiento de cobros y deudas
 - Reporte del día imprimible
-- Ajustes de clínica
-- Exportación/backup en JSON
-- Guardado local con `localStorage`
+- Ajustes de la clínica
+- Exportación de respaldo en JSON
+- Persistencia con Firebase Firestore
 
-## Cómo abrir
+## Requisitos
 
-1. Descomprime el ZIP.
-2. Abre la carpeta `clinic-control-pro` en Visual Studio Code.
-3. Abre `index.html` con la extensión **Live Server**.
+- Un proyecto en Firebase
+- Firestore habilitado
+- Authentication habilitado con acceso anónimo
 
-También puedes abrir `index.html` directamente en el navegador.
+## Configuración
+
+1. Abre [firebase-config.js](firebase-config.js).
+2. Reemplaza los valores con las credenciales de tu proyecto de Firebase.
+3. En Firebase Console habilita:
+   - Firestore Database
+   - Authentication > Anonymous
+
+## Cómo abrir localmente
+
+1. Abre la carpeta del proyecto en Visual Studio Code.
+2. Ejecuta la app con Live Server o abre [index.html](index.html) en tu navegador.
+
+## Publicar en GitHub Pages
+
+1. Sube el proyecto a GitHub.
+2. Entra al repositorio y ve a Settings > Pages.
+3. En Source elige Deploy from a branch.
+4. Selecciona la rama principal y la carpeta /root.
+5. Guarda y espera a que GitHub genere la URL.
 
 ## Nota
 
-Esta versión todavía es frontend solamente. Para usarla en una clínica real se recomienda después agregar:
+Para pruebas rápidas puedes usar estas reglas en Firestore:
 
-- Login y roles
-- Base de datos real
-- Backend/API
-- Seguridad por usuario
-- Historial clínico más completo
-- Exportación a PDF/Excel
-- Backup automático
+```js
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if true;
+    }
+  }
+}
+```
