@@ -1,0 +1,45 @@
+name: Correos automáticos
+
+on:
+  schedule:
+    - cron: "17 8 * * *"
+      timezone: "America/Chicago"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Solo comprobar; no enviar correos"
+        required: true
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: clinic-control-email-reminders
+  cancel-in-progress: false
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Descargar proyecto
+        uses: actions/checkout@v4
+
+      - name: Preparar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Instalar dependencias
+        run: npm install --prefix automation --no-audit --no-fund
+
+      - name: Revisar cumpleaños y citas
+        env:
+          FIREBASE_SERVICE_ACCOUNT_B64: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_B64 }}
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          CLINIC_TIME_ZONE: America/Chicago
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
+        run: node automation/send-emails.js

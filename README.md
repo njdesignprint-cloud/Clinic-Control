@@ -55,21 +55,45 @@ service cloud.firestore {
 }
 ```
 
-## Correos automáticos de cumpleaños
+## Correos automáticos gratuitos
 
-La función `sendBirthdayEmails` revisa todos los días a las 9:00 a. m. (America/Chicago) los pacientes que:
+El workflow `.github/workflows/email-reminders.yml` se ejecuta diariamente a las 8:17 a. m. en la zona `America/Chicago` y envía mediante Gmail:
 
-- tienen fecha de nacimiento y correo electrónico;
-- autorizaron la felicitación automática;
-- cumplen años ese día.
+- felicitaciones de cumpleaños autorizadas;
+- recordatorios de citas programadas aproximadamente 24 horas antes.
 
-El correo se genera en Español o Inglés y solo se crea una vez por paciente y año.
+Los mensajes usan Español o Inglés según la preferencia del paciente. Cada envío se registra en la colección `emailLogs` para evitar duplicados.
 
-Para activar la entrega:
+### 1. Preparar Gmail
 
-1. Cambia el proyecto de Firebase al plan Blaze, necesario para funciones programadas.
-2. Instala las dependencias con `npm install --prefix functions`.
-3. Instala en Firebase la extensión oficial **Trigger Email from Firestore**, usando `mail` como colección y configurando un proveedor SMTP.
-4. Despliega la función con `firebase deploy --only functions:sendBirthdayEmails`.
+1. Usa una cuenta Gmail exclusiva para la clínica.
+2. Activa la verificación en dos pasos.
+3. Crea una contraseña de aplicación de 16 caracteres.
 
-Las credenciales SMTP deben configurarse en Firebase; nunca deben agregarse a `app.js` ni a `firebase-config.js`.
+### 2. Crear la credencial de Firebase
+
+1. Abre Firebase Console > Configuración del proyecto > Cuentas de servicio.
+2. Pulsa **Generar nueva clave privada** y guarda el JSON fuera del repositorio.
+3. En PowerShell, conviértelo a Base64 y cópialo al portapapeles:
+
+```powershell
+[Convert]::ToBase64String([IO.File]::ReadAllBytes("serviceAccountKey.json")) | Set-Clipboard
+```
+
+### 3. Crear GitHub Secrets
+
+En GitHub abre **Settings > Secrets and variables > Actions** y crea:
+
+- `FIREBASE_SERVICE_ACCOUNT_B64`: el valor Base64 copiado.
+- `GMAIL_USER`: el correo completo de Gmail.
+- `GMAIL_APP_PASSWORD`: la contraseña de aplicación, sin espacios.
+
+Nunca subas el archivo JSON ni escribas estas credenciales en `app.js`. El `.gitignore` impide incluir accidentalmente archivos comunes de cuentas de servicio.
+
+### 4. Probar sin enviar
+
+En GitHub abre **Actions > Correos automáticos > Run workflow** y deja activada la opción **Solo comprobar; no enviar correos**. Revisa el resultado del proceso.
+
+### 5. Enviar una prueba real
+
+Crea un paciente de prueba con tu correo, autoriza felicitaciones y configura una cita `Programada` para aproximadamente 24 horas después. Ejecuta nuevamente el workflow desactivando **Solo comprobar**.

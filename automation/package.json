@@ -1,0 +1,9 @@
+{
+  "name": "clinic-control-email-automation",
+  "private": true,
+  "main": "send-emails.js",
+  "dependencies": {
+    "firebase-admin": "^14.1.0",
+    "nodemailer": "^7.0.0"
+  }
+}

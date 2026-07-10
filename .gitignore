@@ -1,0 +1,8 @@
+node_modules/
+automation/node_modules/
+functions/node_modules/
+serviceAccount*.json
+*service-account*.json
+.env
+.env.*
+!.env.example
