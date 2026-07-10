@@ -82,15 +82,19 @@ function appointmentMessage(patient, clinicName, visitDate) {
   };
 }
 
-async function clinicNameFor(clinicRef, cache) {
+async function clinicSettingsFor(clinicRef, cache) {
   if (!cache.has(clinicRef.id)) {
     const settings = await clinicRef.collection("settings").doc("clinic").get();
-    cache.set(clinicRef.id, settings.data()?.clinicName || "Clinic Control");
+    const data = settings.data() || {};
+    cache.set(clinicRef.id, {
+      clinicName: data.clinicName || "Clinic Control",
+      senderEmail: data.senderEmail || data.clinicEmail || process.env.GMAIL_USER
+    });
   }
   return cache.get(clinicRef.id);
 }
 
-async function sendOnce({ id, to, message, metadata }) {
+async function sendOnce({ id, to, message, clinic, metadata }) {
   const logRef = db.collection("emailLogs").doc(id);
   if ((await logRef.get()).exists) return false;
 
@@ -100,7 +104,8 @@ async function sendOnce({ id, to, message, metadata }) {
   }
 
   const result = await transporter.sendMail({
-    from: `Clinic Control <${process.env.GMAIL_USER}>`,
+    from: `${clinic.clinicName} <${clinic.senderEmail}>`,
+    replyTo: clinic.senderEmail,
     to,
     subject: message.subject,
     text: message.text,
@@ -128,11 +133,12 @@ async function sendBirthdayEmails(clinicNames) {
     if (!patient.birthdayEmailEnabled || !patient.email || !patient.birthDate?.endsWith(suffix)) continue;
     const clinicRef = doc.ref.parent.parent;
     if (!clinicRef) continue;
-    const clinicName = await clinicNameFor(clinicRef, clinicNames);
+    const clinic = await clinicSettingsFor(clinicRef, clinicNames);
     if (await sendOnce({
       id: `birthday_${clinicRef.id}_${doc.id}_${year}`,
       to: patient.email,
-      message: birthdayMessage(patient, clinicName),
+      message: birthdayMessage(patient, clinic.clinicName),
+      clinic,
       metadata: { type: "birthday", clinicId: clinicRef.id, patientId: doc.id, year }
     })) sent += 1;
   }
@@ -157,12 +163,13 @@ async function sendAppointmentReminders(clinicNames) {
     const patientDoc = await clinicRef.collection("patients").doc(visit.patientId).get();
     const patient = patientDoc.data();
     if (!patient?.email) continue;
-    const clinicName = await clinicNameFor(clinicRef, clinicNames);
+    const clinic = await clinicSettingsFor(clinicRef, clinicNames);
 
     if (await sendOnce({
       id: `appointment_${clinicRef.id}_${doc.id}_24h`,
       to: patient.email,
-      message: appointmentMessage(patient, clinicName, appointmentDate),
+      message: appointmentMessage(patient, clinic.clinicName, appointmentDate),
+      clinic,
       metadata: { type: "appointment", clinicId: clinicRef.id, patientId: patientDoc.id, visitId: doc.id }
     })) sent += 1;
   }

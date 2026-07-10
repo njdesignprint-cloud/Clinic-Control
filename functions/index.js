@@ -57,7 +57,7 @@ exports.sendBirthdayEmails = onSchedule({
   const { year, month, day } = datePartsInTimeZone();
   const birthdaySuffix = `-${month}-${day}`;
   const patients = await db.collectionGroup("patients").get();
-  const clinicNames = new Map();
+  const clinicSettings = new Map();
   let queued = 0;
 
   for (const patientDoc of patients.docs) {
@@ -67,14 +67,25 @@ exports.sendBirthdayEmails = onSchedule({
     const clinicRef = patientDoc.ref.parent.parent;
     if (!clinicRef) continue;
 
-    if (!clinicNames.has(clinicRef.id)) {
+    if (!clinicSettings.has(clinicRef.id)) {
       const settingsDoc = await clinicRef.collection("settings").doc("clinic").get();
-      clinicNames.set(clinicRef.id, settingsDoc.data()?.clinicName || "Clinic Control");
+      const settings = settingsDoc.data() || {};
+      clinicSettings.set(clinicRef.id, {
+        clinicName: settings.clinicName || "Clinic Control",
+        senderEmail: settings.senderEmail || settings.clinicEmail || ""
+      });
     }
 
     const mailId = `birthday_${clinicRef.id}_${patientDoc.id}_${year}`;
     const mailRef = db.collection("mail").doc(mailId);
-    const message = birthdayMessage(patient, clinicNames.get(clinicRef.id));
+    const clinic = clinicSettings.get(clinicRef.id);
+    const message = {
+      ...birthdayMessage(patient, clinic.clinicName),
+      ...(clinic.senderEmail ? {
+        from: `${clinic.clinicName} <${clinic.senderEmail}>`,
+        replyTo: clinic.senderEmail
+      } : {})
+    };
 
     const created = await db.runTransaction(async (transaction) => {
       if ((await transaction.get(mailRef)).exists) return false;

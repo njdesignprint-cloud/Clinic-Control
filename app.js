@@ -943,7 +943,7 @@ $("#loginForm").addEventListener("submit", async (event) => {
 $("#registerForm").addEventListener("submit", async (event) => {
   event.preventDefault();
   const clinicName = $("#registerClinicName").value.trim();
-  const email = $("#registerEmail").value.trim();
+  const email = $("#registerEmail").value.trim().toLowerCase();
   const password = $("#registerPassword").value;
   const confirm = $("#registerConfirm").value;
 
@@ -974,7 +974,8 @@ $("#registerForm").addEventListener("submit", async (event) => {
       clinicName,
       clinicAddress: "",
       clinicPhone: "",
-      clinicEmail: email
+      clinicEmail: email,
+      senderEmail: email
     }, { merge: true });
     state.settings = { ...state.settings, clinicName, clinicEmail: email };
     render();

@@ -2002,3 +2002,11 @@ dialog::backdrop {
     background: white;
   }
 }
+.auth-field-note {
+  display: block;
+  margin-top: 0.45rem;
+  color: var(--muted, #64748b);
+  font-size: 0.78rem;
+  font-weight: 400;
+  line-height: 1.4;
+}
