@@ -606,13 +606,16 @@ function renderSettings() {
 
 function openPatientDialog(p = null) {
   $("#patientDialogTitle").textContent = p ? "Editar paciente" : "Nuevo paciente";
+  $("#patientSubmitBtn").textContent = p ? "Guardar cambios" : "Guardar paciente";
   $("#patientId").value = p?.id || "";
   $("#patientName").value = p?.name || "";
   $("#patientPhone").value = p?.phone || "";
   $("#patientAge").value = p?.age || "";
   $("#patientDocument").value = p?.document || "";
   $("#patientNotes").value = p?.notes || "";
+  clearFormErrors($("#patientForm"));
   $("#patientDialog").showModal();
+  requestAnimationFrame(() => $("#patientName").focus());
 }
 
 function openVisitDialog(visit = null) {
@@ -634,7 +637,51 @@ function openVisitDialog(visit = null) {
   $("#visitPaid").value = visit?.paid ?? 0;
   $("#visitReason").value = visit?.reason || "";
   $("#visitNotes").value = visit?.notes || "";
+  clearFormErrors($("#visitForm"));
   $("#visitDialog").showModal();
+  requestAnimationFrame(() => $("#visitPatient").focus());
+}
+
+function setFieldError(input, errorElement, message = "") {
+  const field = input.closest(".field-group");
+  field?.classList.toggle("has-error", Boolean(message));
+  input.setAttribute("aria-invalid", message ? "true" : "false");
+  if (errorElement) {
+    errorElement.textContent = message;
+    errorElement.classList.toggle("visible", Boolean(message));
+  }
+}
+
+function clearFormErrors(form) {
+  form.querySelectorAll(".field-group").forEach((field) => field.classList.remove("has-error"));
+  form.querySelectorAll(".field-error").forEach((error) => {
+    error.textContent = "";
+    error.classList.remove("visible");
+  });
+  form.querySelectorAll("[aria-invalid]").forEach((input) => input.setAttribute("aria-invalid", "false"));
+}
+
+function validatePatientForm() {
+  const name = $("#patientName");
+  const age = $("#patientAge");
+  const trimmedName = name.value.trim();
+  const ageNumber = age.value === "" ? null : Number(age.value);
+
+  setFieldError(name, $("#patientNameError"), trimmedName.length < 2 ? "Escribe el nombre completo del paciente." : "");
+  setFieldError(age, $("#patientAgeError"), ageNumber !== null && (ageNumber < 0 || ageNumber > 120) ? "La edad debe estar entre 0 y 120 años." : "");
+  return trimmedName.length >= 2 && (ageNumber === null || (ageNumber >= 0 && ageNumber <= 120));
+}
+
+function validateVisitForm() {
+  const total = Number($("#visitTotal").value || 0);
+  const paid = Number($("#visitPaid").value || 0);
+  const reason = $("#visitReason");
+  const paidMessage = paid > total ? "El pago no puede ser mayor que el total." : "";
+  const reasonMessage = reason.value.trim().length < 3 ? "Describe brevemente el motivo de la consulta." : "";
+
+  setFieldError($("#visitPaid"), $("#visitPaidError"), paidMessage);
+  setFieldError(reason, $("#visitReasonError"), reasonMessage);
+  return !paidMessage && !reasonMessage;
 }
 
 function editPatient(id) {
@@ -701,8 +748,16 @@ $("#globalSearch").addEventListener("input", (event) => {
   showPage("patients");
 });
 
+$("#patientName").addEventListener("input", validatePatientForm);
+$("#patientAge").addEventListener("input", validatePatientForm);
+$("#visitPaid").addEventListener("input", validateVisitForm);
+$("#visitTotal").addEventListener("input", validateVisitForm);
+$("#visitReason").addEventListener("input", validateVisitForm);
+
 $("#patientForm").addEventListener("submit", async (event) => {
   event.preventDefault();
+
+  if (!validatePatientForm()) return;
 
   const id = $("#patientId").value;
   const data = {
@@ -732,10 +787,7 @@ $("#visitForm").addEventListener("submit", async (event) => {
   const total = Number($("#visitTotal").value || 0);
   const paid = Number($("#visitPaid").value || 0);
 
-  if (paid > total) {
-    toast("El pago no puede ser mayor al total.");
-    return;
-  }
+  if (!validateVisitForm()) return;
 
   const id = $("#visitId").value;
   const data = {

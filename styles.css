@@ -1017,19 +1017,116 @@ td small {
   display: grid;
   gap: 8px;
   color: #334155;
-  font-weight: 850;
+  font-weight: 750;
+  font-size: 14px;
 }
 
 .settings-card input,
 .modal input,
 .modal select,
 .modal textarea {
-  border: 1px solid var(--line);
-  border-radius: 15px;
-  padding: 13px 14px;
+  border: 1px solid #cbd5e1;
+  border-radius: 13px;
+  padding: 14px 15px;
   outline: none;
-  background: white;
+  background: #f8fafc;
   width: 100%;
+  color: #0f172a;
+  transition: border-color .18s ease, box-shadow .18s ease, background .18s ease;
+}
+
+.modal input,
+.modal select {
+  min-height: 50px;
+}
+
+.modal textarea {
+  min-height: 96px;
+  resize: vertical;
+}
+
+.modal input::placeholder,
+.modal textarea::placeholder {
+  color: #94a3b8;
+}
+
+.field-group:focus-within {
+  color: var(--primary);
+}
+
+.field-group:focus-within input,
+.field-group:focus-within select,
+.field-group:focus-within textarea {
+  background: white;
+  border-color: var(--primary-2);
+  box-shadow: 0 0 0 4px rgba(20, 184, 166, .13);
+}
+
+.field-label b {
+  color: #e11d48;
+  font-weight: 900;
+}
+
+.field-hint,
+.field-error {
+  font-size: 11px;
+  line-height: 1.35;
+  font-weight: 500;
+}
+
+.field-hint {
+  color: #7c8a9f;
+}
+
+.field-error {
+  display: none;
+  color: #dc2626;
+}
+
+.field-error.visible {
+  display: block;
+}
+
+.field-group.has-error {
+  color: #b91c1c;
+}
+
+.field-group.has-error input,
+.field-group.has-error select,
+.field-group.has-error textarea,
+.field-group.has-error .input-prefix {
+  border-color: #ef4444;
+  background: #fffafa;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, .09);
+}
+
+.input-prefix {
+  display: flex;
+  align-items: center;
+  border: 1px solid #cbd5e1;
+  border-radius: 13px;
+  background: #f8fafc;
+  overflow: hidden;
+  transition: border-color .18s ease, box-shadow .18s ease, background .18s ease;
+}
+
+.input-prefix > span {
+  color: #64748b;
+  padding-left: 15px;
+  font-weight: 800;
+}
+
+.input-prefix input {
+  border: 0 !important;
+  box-shadow: none !important;
+  background: transparent !important;
+  padding-left: 8px;
+}
+
+.field-group:focus-within .input-prefix {
+  border-color: var(--primary-2);
+  background: white;
+  box-shadow: 0 0 0 4px rgba(20, 184, 166, .13);
 }
 
 dialog {
@@ -1037,6 +1134,8 @@ dialog {
   padding: 0;
   background: transparent;
   width: min(820px, calc(100vw - 24px));
+  max-height: calc(100vh - 32px);
+  overflow: visible;
 }
 
 dialog::backdrop {
@@ -1046,16 +1145,28 @@ dialog::backdrop {
 
 .modal {
   background: white;
-  border-radius: 28px;
-  padding: 24px;
+  border-radius: 24px;
+  padding: 0;
   box-shadow: 0 35px 80px rgba(0,0,0,.28);
+  overflow: hidden;
+  max-height: calc(100vh - 32px);
+  display: flex;
+  flex-direction: column;
+  animation: modalIn .2s ease-out;
+}
+
+@keyframes modalIn {
+  from { opacity: 0; transform: translateY(12px) scale(.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 .modal-head {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 18px;
+  padding: 22px 24px 18px;
+  border-bottom: 1px solid #e8edf3;
+  background: linear-gradient(180deg, #fff, #fbfcfe);
 }
 
 .modal-head small {
@@ -1078,12 +1189,66 @@ dialog::backdrop {
   height: 42px;
   border-radius: 14px;
   font-size: 24px;
+  transition: .18s ease;
+}
+
+.close-btn:hover {
+  color: white;
+  background: var(--navy);
+  transform: rotate(4deg);
+}
+
+.modal-body {
+  padding: 22px 24px 24px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+
+.form-section-title {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  margin-bottom: 16px;
+}
+
+.form-section-title > span {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  color: var(--primary);
+  background: #e8faf7;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.form-section-title div {
+  display: grid;
+  gap: 2px;
+}
+
+.form-section-title strong {
+  color: #172033;
+  font-size: 14px;
+}
+
+.form-section-title small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.section-spaced {
+  border-top: 1px solid #edf1f5;
+  padding-top: 20px;
+  margin-top: 22px;
 }
 
 .form-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 14px;
+  gap: 17px 14px;
 }
 
 .full {
@@ -1094,7 +1259,11 @@ dialog::backdrop {
   display: flex;
   justify-content: flex-end;
   gap: 10px;
-  margin-top: 18px;
+  margin-top: 0;
+  padding: 16px 24px;
+  border-top: 1px solid #e8edf3;
+  background: #f8fafc;
+  flex-shrink: 0;
 }
 
 .empty {
