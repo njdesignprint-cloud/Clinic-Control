@@ -129,21 +129,54 @@ async function ensureAuth() {
   }
 
   if (!auth.currentUser) {
-    await auth.signInAnonymously();
+    throw new Error("Usuario no autenticado");
   }
 }
 
-function getCollectionRef(collectionName) {
+function getClinicDocRef() {
   if (!firestore) {
     initFirebase();
   }
-  return firestore.collection(collectionName);
+
+  if (!auth || !auth.currentUser) {
+    throw new Error("Usuario no autenticado");
+  }
+
+  return firestore.collection("clinics").doc(auth.currentUser.uid);
+}
+
+function getCollectionRef(collectionName) {
+  return getClinicDocRef().collection(collectionName);
+}
+
+function unsubscribeAll() {
+  if (unsubscribeSettings) unsubscribeSettings();
+  if (unsubscribePatients) unsubscribePatients();
+  if (unsubscribeVisits) unsubscribeVisits();
+  unsubscribeSettings = null;
+  unsubscribePatients = null;
+  unsubscribeVisits = null;
+}
+
+function showAuthScreen() {
+  $("#authScreen").classList.remove("hidden");
+  document.querySelector(".app-shell").classList.add("hidden");
+}
+
+function showAppScreen() {
+  $("#authScreen").classList.add("hidden");
+  document.querySelector(".app-shell").classList.remove("hidden");
+}
+
+function clearState() {
+  state = { settings: {}, patients: [], visits: [] };
+  render();
 }
 
 async function seedFirebase() {
   const seed = buildSeedState();
   const batch = firestore.batch();
-  batch.set(getCollectionRef("settings").doc("clinic"), seed.settings, { merge: true });
+  batch.set(getClinicDocRef().collection("settings").doc("clinic"), seed.settings, { merge: true });
 
   seed.patients.forEach((patient) => {
     batch.set(getCollectionRef("patients").doc(patient.id), patient, { merge: true });
@@ -157,11 +190,9 @@ async function seedFirebase() {
 }
 
 function subscribeToRealtime() {
-  if (unsubscribeSettings) unsubscribeSettings();
-  if (unsubscribePatients) unsubscribePatients();
-  if (unsubscribeVisits) unsubscribeVisits();
+  unsubscribeAll();
 
-  const settingsRef = getCollectionRef("settings").doc("clinic");
+  const settingsRef = getClinicDocRef().collection("settings").doc("clinic");
   const patientsRef = getCollectionRef("patients");
   const visitsRef = getCollectionRef("visits");
 
@@ -183,41 +214,40 @@ function subscribeToRealtime() {
   });
 }
 
-async function load() {
-  try {
-    await ensureAuth();
+async function loadClinicData() {
+  await ensureAuth();
 
-    const [settingsDoc, patientsSnap, visitsSnap] = await Promise.all([
-      getCollectionRef("settings").doc("clinic").get(),
-      getCollectionRef("patients").get(),
-      getCollectionRef("visits").get()
-    ]);
+  const settingsRef = getClinicDocRef().collection("settings").doc("clinic");
+  const patientsRef = getCollectionRef("patients");
+  const visitsRef = getCollectionRef("visits");
 
-    if (!settingsDoc.exists && patientsSnap.empty && visitsSnap.empty) {
-      await seedFirebase();
-      state = buildSeedState();
-      subscribeToRealtime();
-      render();
-      return;
-    }
+  const [settingsDoc, patientsSnap, visitsSnap] = await Promise.all([
+    settingsRef.get(),
+    patientsRef.get(),
+    visitsRef.get()
+  ]);
 
-    state = normalizeState({
-      settings: settingsDoc.exists ? settingsDoc.data() : {},
-      patients: patientsSnap.docs.map((doc) => ({ id: doc.id, ...doc.data() })),
-      visits: visitsSnap.docs.map((doc) => ({ id: doc.id, ...doc.data() }))
-    });
-
+  if (!settingsDoc.exists && patientsSnap.empty && visitsSnap.empty) {
+    await seedFirebase();
+    state = buildSeedState();
     subscribeToRealtime();
     render();
-  } catch (error) {
-    console.error(error);
-    state = normalizeState(null);
+    return;
   }
+
+  state = normalizeState({
+    settings: settingsDoc.exists ? settingsDoc.data() : {},
+    patients: patientsSnap.docs.map((doc) => ({ id: doc.id, ...doc.data() })),
+    visits: visitsSnap.docs.map((doc) => ({ id: doc.id, ...doc.data() }))
+  });
+
+  subscribeToRealtime();
+  render();
 }
 
 async function save() {
   await ensureAuth();
-  await getCollectionRef("settings").doc("clinic").set(state.settings, { merge: true });
+  await getClinicDocRef().collection("settings").doc("clinic").set(state.settings, { merge: true });
 }
 
 async function savePatient(data) {
@@ -232,7 +262,7 @@ async function saveVisit(data) {
 
 async function saveSettings() {
   await ensureAuth();
-  await getCollectionRef("settings").doc("clinic").set(state.settings, { merge: true });
+  await getClinicDocRef().collection("settings").doc("clinic").set(state.settings, { merge: true });
 }
 
 async function deletePatientEntry(id) {
@@ -257,6 +287,15 @@ function money(value) {
     style: "currency",
     currency: "USD"
   });
+}
+
+function updateUserInfo() {
+  const user = auth.currentUser;
+  if (user) {
+    $("#userInfo").textContent = `Sesión: ${user.email || user.uid}`;
+  } else {
+    $("#userInfo").textContent = "";
+  }
 }
 
 function fmtDate(value) {
@@ -772,12 +811,72 @@ $("#exportBtn").addEventListener("click", () => {
   URL.revokeObjectURL(url);
 });
 
-(async () => {
+$("#logoutBtn").addEventListener("click", async () => {
+  if (!auth) return;
+  await auth.signOut();
+  unsubscribeAll();
+  clearState();
+  showAuthScreen();
+});
+
+$("#loginForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const email = $("#loginEmail").value.trim();
+  const password = $("#loginPassword").value;
+
   try {
-    await load();
-    render();
+    initFirebase();
+    await auth.signInWithEmailAndPassword(email, password);
+    toast("Sesión iniciada");
   } catch (error) {
     console.error(error);
-    toast("No se pudo conectar con Firebase");
+    toast("No se pudo iniciar sesión. Verifica tus datos.");
+  }
+});
+
+$("#registerForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const email = $("#registerEmail").value.trim();
+  const password = $("#registerPassword").value;
+  const confirm = $("#registerConfirm").value;
+
+  if (password !== confirm) {
+    toast("Las contraseñas no coinciden.");
+    return;
+  }
+
+  try {
+    initFirebase();
+    await auth.createUserWithEmailAndPassword(email, password);
+    toast("Cuenta creada. Bienvenido.");
+  } catch (error) {
+    console.error(error);
+    toast("No se pudo crear la cuenta. Revisa los datos.");
+  }
+});
+
+function handleAuthState(user) {
+  if (user) {
+    updateUserInfo();
+    showAppScreen();
+    loadClinicData().catch((error) => {
+      console.error(error);
+      toast("No se pudo cargar datos de la clínica.");
+    });
+  } else {
+    showAuthScreen();
+  }
+}
+
+(async () => {
+  try {
+    initFirebase();
+    auth.onAuthStateChanged(handleAuthState, (error) => {
+      console.error(error);
+      toast("Error de autenticación.");
+    });
+  } catch (error) {
+    console.error(error);
+    toast("No se pudo inicializar Firebase");
   }
 })();

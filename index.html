@@ -7,7 +7,50 @@
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <div class="app-shell">
+  <div id="authScreen" class="auth-screen">
+    <div class="auth-card">
+      <div class="auth-header">
+        <div>
+          <strong>Clinic Control</strong>
+          <p>Inicia sesión o regístrate para guardar los datos de tu clínica de forma segura.</p>
+        </div>
+      </div>
+
+      <div class="auth-forms">
+        <form id="loginForm" class="auth-form">
+          <h2>Ingresar</h2>
+          <label>
+            Correo electrónico
+            <input id="loginEmail" type="email" placeholder="tu@clinica.com" required />
+          </label>
+          <label>
+            Contraseña
+            <input id="loginPassword" type="password" placeholder="Contraseña" required />
+          </label>
+          <button class="btn primary" type="submit">Ingresar</button>
+        </form>
+
+        <form id="registerForm" class="auth-form">
+          <h2>Registrarse</h2>
+          <label>
+            Correo electrónico
+            <input id="registerEmail" type="email" placeholder="tu@clinica.com" required />
+          </label>
+          <label>
+            Contraseña
+            <input id="registerPassword" type="password" placeholder="Contraseña" required />
+          </label>
+          <label>
+            Confirmar contraseña
+            <input id="registerConfirm" type="password" placeholder="Repite la contraseña" required />
+          </label>
+          <button class="btn dark" type="submit">Crear cuenta</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="app-shell hidden">
     <aside class="sidebar">
       <div class="brand">
         <div class="logo-mark">
@@ -52,6 +95,7 @@
         <div>
           <small class="eyebrow">Panel administrativo</small>
           <h1 id="pageTitle">Dashboard</h1>
+          <small id="userInfo" class="user-info"></small>
         </div>
 
         <div class="topbar-actions">
@@ -60,6 +104,7 @@
             <input id="globalSearch" type="search" placeholder="Buscar paciente, consulta o teléfono..." />
           </div>
           <button class="btn light" id="exportBtn">Exportar</button>
+          <button class="btn light" id="logoutBtn">Cerrar sesión</button>
           <button class="btn primary" id="quickVisitBtn">Nueva consulta</button>
         </div>
       </header>
