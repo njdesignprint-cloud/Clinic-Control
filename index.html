@@ -255,7 +255,8 @@
               <tr>
                 <th>Paciente</th>
                 <th>Contacto</th>
-                <th>Edad</th>
+                <th>Nacimiento / Edad</th>
+                <th>Idioma</th>
                 <th>Documento</th>
                 <th>Registro</th>
                 <th></th>
@@ -376,9 +377,21 @@
           <input id="patientAge" type="number" min="0" max="120" placeholder="Ej. 35" />
           <small class="field-error" id="patientAgeError"></small>
         </label>
+        <label class="field-group">Fecha de nacimiento
+          <input id="patientBirthDate" type="date" autocomplete="bday" />
+          <small class="field-hint">La edad se calculará automáticamente</small>
+          <small class="field-error" id="patientBirthDateError"></small>
+        </label>
         <label class="field-group">Documento / ID
           <input id="patientDocument" type="text" placeholder="Ej. DNI-001245" />
           <small class="field-hint">Documento oficial o código interno</small>
+        </label>
+        <label class="field-group required"><span class="field-label">Idioma preferido <b>*</b></span>
+          <select id="patientLanguage" required>
+            <option value="Español">Español</option>
+            <option value="Inglés">Inglés</option>
+          </select>
+          <small class="field-hint">Idioma para comunicarse con el paciente</small>
         </label>
         <label class="field-group full">Notas
           <textarea id="patientNotes" rows="3" placeholder="Información médica o administrativa relevante"></textarea>

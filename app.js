@@ -285,6 +285,26 @@ function fmtDate(value) {
   });
 }
 
+function fmtBirthDate(value) {
+  if (!value) return "-";
+  return new Date(`${value}T00:00:00`).toLocaleDateString("es-US", {
+    month: "2-digit",
+    day: "2-digit",
+    year: "numeric"
+  });
+}
+
+function ageFromBirthDate(value) {
+  if (!value) return "";
+  const birth = new Date(`${value}T00:00:00`);
+  const now = new Date();
+  let age = now.getFullYear() - birth.getFullYear();
+  const beforeBirthday = now.getMonth() < birth.getMonth()
+    || (now.getMonth() === birth.getMonth() && now.getDate() < birth.getDate());
+  if (beforeBirthday) age -= 1;
+  return age;
+}
+
 function today() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -453,13 +473,14 @@ function renderFinanceBars(data) {
 
 function renderPatients() {
   const query = ($("#patientSearch")?.value || "").toLowerCase().trim();
-  const rows = state.patients.filter((p) => `${p.name} ${p.phone} ${p.document}`.toLowerCase().includes(query));
+  const rows = state.patients.filter((p) => `${p.name} ${p.phone} ${p.document} ${p.language || ""}`.toLowerCase().includes(query));
 
   $("#patientsTable").innerHTML = rows.length ? rows.map((p) => `
     <tr>
       <td><strong>${p.name}</strong><br><small>${p.notes || "Sin notas"}</small></td>
       <td>${p.phone || "-"}</td>
-      <td>${p.age || "-"}</td>
+      <td>${fmtBirthDate(p.birthDate)}<br><small>${p.age !== "" && p.age != null ? `${p.age} años` : "Edad no indicada"}</small></td>
+      <td><span class="badge blue">${p.language || "No indicado"}</span></td>
       <td>${p.document || "-"}</td>
       <td>${fmtDate(p.createdAt)}</td>
       <td>
@@ -469,7 +490,7 @@ function renderPatients() {
         </div>
       </td>
     </tr>
-  `).join("") : `<tr><td class="empty" colspan="6">No se encontraron pacientes.</td></tr>`;
+  `).join("") : `<tr><td class="empty" colspan="7">No se encontraron pacientes.</td></tr>`;
 }
 
 function renderVisitOptions() {
@@ -611,7 +632,10 @@ function openPatientDialog(p = null) {
   $("#patientId").value = p?.id || "";
   $("#patientName").value = p?.name || "";
   $("#patientPhone").value = p?.phone || "";
-  $("#patientAge").value = p?.age || "";
+  $("#patientAge").value = p?.age ?? "";
+  $("#patientBirthDate").value = p?.birthDate || "";
+  $("#patientBirthDate").max = today();
+  $("#patientLanguage").value = p?.language || "Español";
   $("#patientDocument").value = p?.document || "";
   $("#patientNotes").value = p?.notes || "";
   clearFormErrors($("#patientForm"));
@@ -665,12 +689,15 @@ function clearFormErrors(form) {
 function validatePatientForm() {
   const name = $("#patientName");
   const age = $("#patientAge");
+  const birthDate = $("#patientBirthDate");
   const trimmedName = name.value.trim();
   const ageNumber = age.value === "" ? null : Number(age.value);
+  const birthDateMessage = birthDate.value && birthDate.value > today() ? "La fecha de nacimiento no puede ser futura." : "";
 
   setFieldError(name, $("#patientNameError"), trimmedName.length < 2 ? "Escribe el nombre completo del paciente." : "");
   setFieldError(age, $("#patientAgeError"), ageNumber !== null && (ageNumber < 0 || ageNumber > 120) ? "La edad debe estar entre 0 y 120 años." : "");
-  return trimmedName.length >= 2 && (ageNumber === null || (ageNumber >= 0 && ageNumber <= 120));
+  setFieldError(birthDate, $("#patientBirthDateError"), birthDateMessage);
+  return trimmedName.length >= 2 && !birthDateMessage && (ageNumber === null || (ageNumber >= 0 && ageNumber <= 120));
 }
 
 function validateVisitForm() {
@@ -763,6 +790,11 @@ $("#globalSearch").addEventListener("input", (event) => {
 
 $("#patientName").addEventListener("input", validatePatientForm);
 $("#patientAge").addEventListener("input", validatePatientForm);
+$("#patientBirthDate").addEventListener("change", () => {
+  const calculatedAge = ageFromBirthDate($("#patientBirthDate").value);
+  if (calculatedAge !== "" && calculatedAge >= 0) $("#patientAge").value = calculatedAge;
+  validatePatientForm();
+});
 $("#visitPaid").addEventListener("input", validateVisitForm);
 $("#visitTotal").addEventListener("input", validateVisitForm);
 $("#visitReason").addEventListener("input", validateVisitForm);
@@ -778,6 +810,8 @@ $("#patientForm").addEventListener("submit", async (event) => {
     name: $("#patientName").value.trim(),
     phone: $("#patientPhone").value.trim(),
     age: $("#patientAge").value,
+    birthDate: $("#patientBirthDate").value,
+    language: $("#patientLanguage").value,
     document: $("#patientDocument").value.trim(),
     notes: $("#patientNotes").value.trim(),
     createdAt: id ? state.patients.find((p) => p.id === id)?.createdAt : new Date().toISOString()
