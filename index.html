@@ -443,7 +443,27 @@
           </select>
           <small class="field-hint">Idioma para comunicarse con el paciente</small>
         </label>
-        <div class="form-section-title full"><span>2</span><div><strong>Autorización de notificaciones</strong><small>Selecciona únicamente los medios autorizados por el paciente</small></div></div>
+        <div class="form-section-title full"><span>2</span><div><strong>Responsable de pago</strong><small>Indica cómo se cubrirán los servicios del paciente</small></div></div>
+        <label class="field-group required full"><span class="field-label">Forma de pago <b>*</b></span>
+          <select id="patientPayerType" required>
+            <option value="self_pay">El paciente paga por cuenta propia</option>
+            <option value="insurance">Seguro médico</option>
+          </select>
+        </label>
+        <div id="patientInsuranceFields" class="insurance-fields full hidden">
+          <label class="field-group required"><span class="field-label">Compañía de seguro <b>*</b></span>
+            <input id="patientInsuranceCompany" type="text" placeholder="Ej. Blue Cross Blue Shield" />
+            <small class="field-error" id="patientInsuranceCompanyError"></small>
+          </label>
+          <label class="field-group required"><span class="field-label">ID de miembro / póliza <b>*</b></span>
+            <input id="patientInsuranceMemberId" type="text" placeholder="Número de identificación" />
+            <small class="field-error" id="patientInsuranceMemberIdError"></small>
+          </label>
+          <label class="field-group">Número de grupo
+            <input id="patientInsuranceGroup" type="text" placeholder="Opcional" />
+          </label>
+        </div>
+        <div class="form-section-title full"><span>3</span><div><strong>Autorización de notificaciones</strong><small>Selecciona únicamente los medios autorizados por el paciente</small></div></div>
         <label class="consent-field full">
           <input id="patientEmailNotifications" type="checkbox" />
           <span><strong>Autoriza notificaciones por correo electrónico</strong><small>Permite enviar recordatorios y comunicaciones al correo registrado.</small></span>

@@ -287,6 +287,12 @@ function visitItems(visit) {
   return [];
 }
 
+function payerLabel(p) {
+  return p?.payerType === "insurance"
+    ? `Seguro médico${p.insuranceCompany ? ` · ${p.insuranceCompany}` : ""}`
+    : "Pago propio";
+}
+
 function updateUserInfo() {
   const user = auth.currentUser;
   if (user) {
@@ -502,7 +508,7 @@ function renderPatients() {
 
   $("#patientsTable").innerHTML = rows.length ? rows.map((p) => `
     <tr>
-      <td><strong>${p.name}</strong><br><small>${p.notes || "Sin notas"}</small></td>
+      <td><strong>${p.name}</strong><br><small>${p.notes || "Sin notas"}</small><br><span class="badge ${p.payerType === "insurance" ? "blue" : "green"}">${escapeHtml(payerLabel(p))}</span></td>
       <td>${p.phone || "-"}<br><small>${p.email || "Sin correo"}</small></td>
       <td>${fmtBirthDate(p.birthDate)}<br><small>${p.age !== "" && p.age != null ? `${p.age} años` : "Edad no indicada"}</small></td>
       <td><span class="badge blue">${p.language || "No indicado"}</span></td>
@@ -646,7 +652,7 @@ function openInvoice(id) {
         <div class="invoice-heading"><strong>FACTURA</strong><span>${escapeHtml(invoiceNumber(visit))}</span></div>
       </header>
       <div class="invoice-meta">
-        <div><small>Paciente</small><strong>${escapeHtml(p?.name || "Paciente eliminado")}</strong><span>${escapeHtml(p?.phone || "")}</span></div>
+        <div><small>Paciente</small><strong>${escapeHtml(p?.name || "Paciente eliminado")}</strong><span>${escapeHtml(p?.phone || "")}</span><span>${escapeHtml(payerLabel(p))}</span></div>
         <div><small>Fecha</small><strong>${fmtDate(visit.date)}</strong><span>${escapeHtml(visit.doctor || "Sin doctor asignado")}</span></div>
       </div>
       <table class="invoice-items">
@@ -704,6 +710,9 @@ function downloadInvoicePdf(id = activeInvoiceId) {
   pdf.setFont("helvetica", "normal");
   pdf.text(`Teléfono: ${p?.phone || "No indicado"}`, left, y);
   pdf.text(`Doctor: ${visit.doctor || "No indicado"}`, 320, y);
+  y += 17;
+  pdf.text(`Responsable de pago: ${payerLabel(p)}`, left, y);
+  if (p?.payerType === "insurance" && p.insuranceMemberId) pdf.text(`ID de miembro: ${p.insuranceMemberId}`, 320, y);
   y += 32;
 
   pdf.setFillColor(241, 245, 249);
@@ -822,6 +831,11 @@ function openPatientDialog(p = null) {
   $("#patientBirthDate").value = p?.birthDate || "";
   $("#patientBirthDate").max = today();
   $("#patientLanguage").value = p?.language || "Español";
+  $("#patientPayerType").value = p?.payerType || "self_pay";
+  $("#patientInsuranceCompany").value = p?.insuranceCompany || "";
+  $("#patientInsuranceMemberId").value = p?.insuranceMemberId || "";
+  $("#patientInsuranceGroup").value = p?.insuranceGroup || "";
+  togglePatientInsuranceFields();
   $("#patientEmailNotifications").checked = Boolean(p?.emailNotificationsEnabled);
   $("#patientSmsNotifications").checked = Boolean(p?.smsNotificationsEnabled);
   $("#patientBirthdayEmail").checked = Boolean(p?.birthdayEmailEnabled);
@@ -921,6 +935,11 @@ function clearFormErrors(form) {
   form.querySelectorAll("[aria-invalid]").forEach((input) => input.setAttribute("aria-invalid", "false"));
 }
 
+function togglePatientInsuranceFields() {
+  const insured = $("#patientPayerType").value === "insurance";
+  $("#patientInsuranceFields").classList.toggle("hidden", !insured);
+}
+
 function validatePatientForm() {
   const name = $("#patientName");
   const age = $("#patientAge");
@@ -930,6 +949,9 @@ function validatePatientForm() {
   const emailNotificationsEnabled = $("#patientEmailNotifications").checked;
   const smsNotificationsEnabled = $("#patientSmsNotifications").checked;
   const birthdayEmailEnabled = $("#patientBirthdayEmail").checked;
+  const insured = $("#patientPayerType").value === "insurance";
+  const insuranceCompany = $("#patientInsuranceCompany");
+  const insuranceMemberId = $("#patientInsuranceMemberId");
   const trimmedName = name.value.trim();
   const ageNumber = age.value === "" ? null : Number(age.value);
   const birthDateMessage = birthDate.value && birthDate.value > today() ? "La fecha de nacimiento no puede ser futura." : "";
@@ -942,13 +964,17 @@ function validatePatientForm() {
   const birthdayMessage = birthdayEmailEnabled && !emailNotificationsEnabled
     ? "Autoriza primero las notificaciones por correo electrónico."
     : "";
+  const insuranceCompanyMessage = insured && !insuranceCompany.value.trim() ? "Indica la compañía de seguro." : "";
+  const insuranceMemberIdMessage = insured && !insuranceMemberId.value.trim() ? "Indica el ID de miembro o póliza." : "";
 
   setFieldError(name, $("#patientNameError"), trimmedName.length < 2 ? "Escribe el nombre completo del paciente." : "");
   setFieldError(age, $("#patientAgeError"), ageNumber !== null && (ageNumber < 0 || ageNumber > 120) ? "La edad debe estar entre 0 y 120 años." : "");
   setFieldError(birthDate, $("#patientBirthDateError"), birthDateMessage);
   setFieldError(phone, $("#patientPhoneError"), phoneMessage);
   setFieldError(email, $("#patientEmailError"), emailMessage || birthdayMessage);
-  return trimmedName.length >= 2 && !birthDateMessage && !phoneMessage && !emailMessage && !birthdayMessage && (ageNumber === null || (ageNumber >= 0 && ageNumber <= 120));
+  setFieldError(insuranceCompany, $("#patientInsuranceCompanyError"), insuranceCompanyMessage);
+  setFieldError(insuranceMemberId, $("#patientInsuranceMemberIdError"), insuranceMemberIdMessage);
+  return trimmedName.length >= 2 && !birthDateMessage && !phoneMessage && !emailMessage && !birthdayMessage && !insuranceCompanyMessage && !insuranceMemberIdMessage && (ageNumber === null || (ageNumber >= 0 && ageNumber <= 120));
 }
 
 function validateVisitForm() {
@@ -1060,6 +1086,12 @@ $("#patientEmail").addEventListener("input", validatePatientForm);
 $("#patientEmailNotifications").addEventListener("change", validatePatientForm);
 $("#patientSmsNotifications").addEventListener("change", validatePatientForm);
 $("#patientBirthdayEmail").addEventListener("change", validatePatientForm);
+$("#patientPayerType").addEventListener("change", () => {
+  togglePatientInsuranceFields();
+  validatePatientForm();
+});
+$("#patientInsuranceCompany").addEventListener("input", validatePatientForm);
+$("#patientInsuranceMemberId").addEventListener("input", validatePatientForm);
 $("#patientBirthDate").addEventListener("change", () => {
   const calculatedAge = ageFromBirthDate($("#patientBirthDate").value);
   if (calculatedAge !== "" && calculatedAge >= 0) $("#patientAge").value = calculatedAge;
@@ -1087,6 +1119,10 @@ $("#patientForm").addEventListener("submit", async (event) => {
     age: $("#patientAge").value,
     birthDate: $("#patientBirthDate").value,
     language: $("#patientLanguage").value,
+    payerType: $("#patientPayerType").value,
+    insuranceCompany: $("#patientPayerType").value === "insurance" ? $("#patientInsuranceCompany").value.trim() : "",
+    insuranceMemberId: $("#patientPayerType").value === "insurance" ? $("#patientInsuranceMemberId").value.trim() : "",
+    insuranceGroup: $("#patientPayerType").value === "insurance" ? $("#patientInsuranceGroup").value.trim() : "",
     emailNotificationsEnabled: $("#patientEmailNotifications").checked,
     smsNotificationsEnabled: $("#patientSmsNotifications").checked,
     birthdayEmailEnabled: $("#patientBirthdayEmail").checked,

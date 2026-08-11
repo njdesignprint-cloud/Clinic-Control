@@ -1563,6 +1563,20 @@ dialog::backdrop {
   gap: 17px 14px;
 }
 
+.insurance-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 17px 14px;
+  padding: 16px;
+  border: 1px solid #bfdbfe;
+  border-radius: 16px;
+  background: #eff6ff;
+}
+
+.insurance-fields.hidden {
+  display: none;
+}
+
 .full {
   grid-column: 1 / -1;
 }
@@ -1684,7 +1698,8 @@ dialog::backdrop {
   .dashboard-grid,
   .billing-grid,
   .report-metrics,
-  .form-grid {
+  .form-grid,
+  .insurance-fields {
     grid-template-columns: 1fr;
   }
 
