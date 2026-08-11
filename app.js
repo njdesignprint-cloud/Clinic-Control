@@ -805,37 +805,77 @@ function renderVisits() {
   }).join("") : `<tr><td class="empty" colspan="8">No hay consultas registradas.</td></tr>`;
 }
 
+function billingVisitAmounts(visit) {
+  const type = paymentType(visit);
+  const total = Number(visit.total || 0);
+  const patientPaid = visit.patientPaid !== undefined ? Number(visit.patientPaid || 0) : (type === "cash" ? Number(visit.paid || 0) : 0);
+  const insurancePaid = Number(visit.insurancePaid || 0);
+  const patientExpected = type === "cash" ? total : Math.min(total, Math.max(Number(visit.copay || 0), patientPaid));
+  const insuranceExpected = type === "insurance" ? Math.max(0, total - patientExpected) : 0;
+  return {
+    type, total, patientPaid, insurancePaid, patientExpected, insuranceExpected,
+    patientPending: Math.max(0, patientExpected - patientPaid),
+    insurancePending: Math.max(0, insuranceExpected - insurancePaid)
+  };
+}
+
+function billingSummaryCard(label, amount, hint, tone = "") {
+  return `<article class="kpi-card billing-kpi ${tone}"><span class="kpi-label">${label}</span><strong>${money(amount)}</strong><small>${hint}</small></article>`;
+}
+
+function renderBillingSummary(visits) {
+  const totals = visits.reduce((acc, visit) => {
+    const value = billingVisitAmounts(visit);
+    acc.billed += value.total;
+    if (value.type === "cash") acc.cashBilled += value.total;
+    else acc.insuranceBilled += value.total;
+    acc.patientPaid += value.patientPaid;
+    acc.insurancePaid += value.insurancePaid;
+    acc.patientPending += value.patientPending;
+    acc.insurancePending += value.insurancePending;
+    return acc;
+  }, { billed: 0, cashBilled: 0, insuranceBilled: 0, patientPaid: 0, insurancePaid: 0, patientPending: 0, insurancePending: 0 });
+  const pending = totals.patientPending + totals.insurancePending;
+  let cards = "";
+  if (activeBillingTab === "cash") {
+    cards = billingSummaryCard("Facturado Cash", totals.cashBilled, "Responsabilidad de pacientes", "tone-cash")
+      + billingSummaryCard("Cobrado Cash", totals.patientPaid, "Efectivo, tarjeta y copagos", "tone-paid")
+      + billingSummaryCard("Balance de pacientes", totals.patientPending, "Pendiente por cobrar", "tone-pending");
+  } else if (activeBillingTab === "insurance") {
+    cards = billingSummaryCard("Facturado a seguros", totals.insuranceBilled, "Consultas con cobertura", "tone-insurance")
+      + billingSummaryCard("Pagado por seguros", totals.insurancePaid, "Reclamaciones cobradas", "tone-paid")
+      + billingSummaryCard("Copagos cobrados", totals.patientPaid, "Pagos del paciente", "tone-cash")
+      + billingSummaryCard("Balance de seguros", totals.insurancePending, "Pendiente de aseguradoras", "tone-pending");
+  } else if (activeBillingTab === "pending") {
+    cards = billingSummaryCard("Balance total", pending, "Todo lo pendiente", "tone-pending")
+      + billingSummaryCard("Deben pacientes", totals.patientPending, "Cash y copagos pendientes", "tone-cash")
+      + billingSummaryCard("Deben seguros", totals.insurancePending, "Reclamaciones pendientes", "tone-insurance");
+  } else {
+    cards = billingSummaryCard("Total facturado", totals.billed, "Cash y seguros", "tone-all")
+      + billingSummaryCard("Facturado Cash", totals.cashBilled, "Pacientes de pago propio", "tone-cash")
+      + billingSummaryCard("Cash cobrado", totals.patientPaid, "Incluye copagos", "tone-paid")
+      + billingSummaryCard("Facturado a seguros", totals.insuranceBilled, "Consultas aseguradas", "tone-insurance")
+      + billingSummaryCard("Seguros cobrados", totals.insurancePaid, "Pagos recibidos", "tone-paid")
+      + billingSummaryCard("Balance total", pending, `Pacientes ${money(totals.patientPending)} · Seguros ${money(totals.insurancePending)}`, "tone-pending");
+  }
+  $("#billingSummary").className = `kpi-grid billing-summary summary-${activeBillingTab}`;
+  $("#billingSummary").innerHTML = cards;
+}
+
 function renderBilling() {
   const insuranceSelect = $("#billingInsuranceFilter");
   const selectedInsurance = insuranceSelect.value;
   const insuranceCompanies = [...new Set(state.patients.map((p) => p.insuranceCompany).filter(Boolean))].sort();
   insuranceSelect.innerHTML = `<option value="">Todos los seguros</option>${insuranceCompanies.map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join("")}`;
   if (insuranceCompanies.includes(selectedInsurance)) insuranceSelect.value = selectedInsurance;
-  const summary = state.visits.reduce((acc, visit) => {
-    acc.billed += Number(visit.total || 0);
-    acc.patient += visit.patientPaid !== undefined ? Number(visit.patientPaid || 0) : (paymentType(visit) === "cash" ? Number(visit.paid || 0) : 0);
-    acc.insurance += Number(visit.insurancePaid || 0);
-    acc.pending += balance(visit);
-    return acc;
-  }, { billed: 0, patient: 0, insurance: 0, pending: 0 });
-  $("#billingSummary").innerHTML = `
-    <article class="kpi-card"><span class="kpi-label">Total facturado</span><strong>${money(summary.billed)}</strong><small>Todas las consultas</small></article>
-    <article class="kpi-card"><span class="kpi-label">Pagado por pacientes</span><strong>${money(summary.patient)}</strong><small>Cash, tarjeta y copagos</small></article>
-    <article class="kpi-card"><span class="kpi-label">Pagado por seguros</span><strong>${money(summary.insurance)}</strong><small>Reclamaciones procesadas</small></article>
-    <article class="kpi-card accent"><span class="kpi-label">Balance pendiente</span><strong>${money(summary.pending)}</strong><small>Por cobrar</small></article>`;
-
   const query = ($("#billingSearch")?.value || "").toLowerCase().trim();
   const statusFilter = $("#billingStatusFilter")?.value || "";
   const dateFrom = $("#billingDateFrom")?.value || "";
   const dateTo = $("#billingDateTo")?.value || "";
   const insuranceFilter = $("#billingInsuranceFilter")?.value || "";
-  const rows = [...state.visits].filter((visit) => {
+  const filteredVisits = [...state.visits].filter((visit) => {
     const p = patient(visit.patientId);
-    const type = paymentType(visit);
     const status = financialStatus(visit);
-    if (activeBillingTab === "cash" && type !== "cash") return false;
-    if (activeBillingTab === "insurance" && type !== "insurance") return false;
-    if (activeBillingTab === "pending" && balance(visit) <= 0) return false;
     if (statusFilter && status.key !== statusFilter) return false;
     const visitDate = String(visit.date || "").slice(0, 10);
     if (dateFrom && visitDate < dateFrom) return false;
@@ -843,7 +883,15 @@ function renderBilling() {
     if (insuranceFilter && p?.insuranceCompany !== insuranceFilter) return false;
     const searchable = `${p?.name || ""} ${p?.insuranceCompany || ""} ${invoiceNumber(visit)} ${visitItems(visit).map((item) => item.description).join(" ")}`.toLowerCase();
     return searchable.includes(query);
+  });
+  const rows = filteredVisits.filter((visit) => {
+    const type = paymentType(visit);
+    if (activeBillingTab === "cash" && type !== "cash") return false;
+    if (activeBillingTab === "insurance" && type !== "insurance") return false;
+    if (activeBillingTab === "pending" && balance(visit) <= 0) return false;
+    return true;
   }).sort((a, b) => new Date(b.date) - new Date(a.date));
+  renderBillingSummary(rows);
 
   $("#billingTable").innerHTML = rows.length ? rows.map((visit) => {
     const p = patient(visit.patientId);

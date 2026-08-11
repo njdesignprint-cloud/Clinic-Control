@@ -359,10 +359,10 @@
 
         <div id="billingSummary" class="kpi-grid billing-summary"></div>
         <div class="finance-tabs" role="tablist" aria-label="Tipo de pago">
-          <button class="finance-tab active" data-billing-tab="all">Todos</button>
-          <button class="finance-tab" data-billing-tab="cash">Cash</button>
-          <button class="finance-tab" data-billing-tab="insurance">Seguros</button>
-          <button class="finance-tab" data-billing-tab="pending">Balances pendientes</button>
+          <button class="finance-tab tab-all active" data-billing-tab="all"><span>▦</span><strong>Todos</strong><small>Resumen completo</small></button>
+          <button class="finance-tab tab-cash" data-billing-tab="cash"><span>$</span><strong>Cash</strong><small>Pagos de pacientes</small></button>
+          <button class="finance-tab tab-insurance" data-billing-tab="insurance"><span>+</span><strong>Seguros</strong><small>Reclamaciones</small></button>
+          <button class="finance-tab tab-pending" data-billing-tab="pending"><span>!</span><strong>Balances</strong><small>Dinero pendiente</small></button>
         </div>
         <div class="panel-toolbar finance-toolbar">
           <input id="billingSearch" type="search" placeholder="Buscar paciente, servicio, factura o seguro..." />

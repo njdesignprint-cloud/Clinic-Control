@@ -255,6 +255,7 @@ body {
 }
 
 @media (max-width: 820px) {
+  .finance-tabs { grid-template-columns: repeat(2, minmax(140px, 1fr)); }
   .auth-forms {
     grid-template-columns: 1fr;
   }
@@ -1026,36 +1027,54 @@ button {
 
 .billing-summary {
   margin-bottom: 18px;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
 }
 
 .finance-tabs {
-  display: flex;
-  gap: 6px;
-  padding: 5px;
-  margin-bottom: 14px;
-  width: max-content;
-  max-width: 100%;
-  overflow-x: auto;
-  border: 1px solid var(--line);
-  border-radius: 15px;
-  background: #f1f5f9;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(150px, 1fr));
+  gap: 10px;
+  margin-bottom: 18px;
 }
 
 .finance-tab {
-  border: 0;
-  border-radius: 11px;
-  padding: 10px 15px;
+  display: grid;
+  grid-template-columns: 38px 1fr;
+  gap: 2px 10px;
+  align-items: center;
+  border: 2px solid var(--line);
+  border-radius: 15px;
+  padding: 12px 14px;
   color: var(--muted);
-  background: transparent;
+  background: white;
   font-weight: 850;
-  white-space: nowrap;
+  text-align: left;
+  cursor: pointer;
 }
+.finance-tab > span { grid-row: 1 / 3; width: 38px; height: 38px; display: grid; place-items: center; border-radius: 11px; background: #e2e8f0; color: var(--navy); font-size: 17px; }
+.finance-tab strong { color: var(--navy); font-size: 15px; }
+.finance-tab small { font-size: 10px; font-weight: 700; }
 
 .finance-tab.active {
+  border-color: var(--primary);
   color: var(--primary);
-  background: white;
-  box-shadow: 0 2px 8px rgba(15, 23, 42, .08);
+  background: #f0fdfa;
+  box-shadow: 0 6px 18px rgba(15, 118, 110, .15);
 }
+.finance-tab.active > span { color: white; background: var(--primary); }
+.finance-tab.tab-cash.active { border-color: #059669; background: #ecfdf5; }
+.finance-tab.tab-cash.active > span { background: #059669; }
+.finance-tab.tab-insurance.active { border-color: #2563eb; background: #eff6ff; }
+.finance-tab.tab-insurance.active > span { background: #2563eb; }
+.finance-tab.tab-pending.active { border-color: #ea580c; background: #fff7ed; }
+.finance-tab.tab-pending.active > span { background: #ea580c; }
+.billing-kpi { border-top: 4px solid #64748b; }
+.billing-kpi.tone-all { border-top-color: var(--navy); }
+.billing-kpi.tone-cash { border-top-color: #059669; }
+.billing-kpi.tone-insurance { border-top-color: #2563eb; }
+.billing-kpi.tone-paid { border-top-color: #0d9488; }
+.billing-kpi.tone-pending { border-top-color: #ea580c; background: #fffaf5; }
+.billing-kpi strong { font-size: clamp(24px, 2.3vw, 34px); }
 
 .finance-toolbar select {
   min-width: 210px;
@@ -1233,6 +1252,7 @@ td small {
 .invoice-claim > div { display: grid; gap: 3px; }
 
 @media (max-width: 820px) {
+  .finance-tabs { grid-template-columns: repeat(2, minmax(140px, 1fr)); }
   .appointment-viewbar { width: 100%; flex-wrap: wrap; }
   .view-option { flex: 1; }
   .view-help { flex-basis: 100%; padding: 3px 8px 5px; }
@@ -1252,6 +1272,8 @@ td small {
 }
 
 @media (max-width: 520px) {
+  .finance-tabs { grid-template-columns: 1fr; }
+  .finance-tab { min-height: 66px; }
   .appointment-summary { grid-template-columns: repeat(2, 1fr); }
   .schedule-controls { grid-template-columns: auto 1fr auto; }
   #appointmentNextDay { grid-column: 3; grid-row: 1; }
