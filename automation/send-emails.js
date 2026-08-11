@@ -184,7 +184,8 @@ async function sendAppointmentReminders(clinicNames) {
     { key: "2d", offsetMs: 48 * 60 * 60 * 1000, es: "Recordatorio de 2 días", en: "2-day reminder" },
     { key: "3h", offsetMs: 3 * 60 * 60 * 1000, es: "Recordatorio de 3 horas", en: "3-hour reminder" }
   ];
-  const toleranceMs = 40 * 60 * 1000;
+  // Ventana amplia para tolerar retrasos del programador; los IDs por etapa evitan duplicados.
+  const toleranceMs = 70 * 60 * 1000;
   const [appointments, visits] = await Promise.all([
     db.collectionGroup("appointments").get(),
     db.collectionGroup("visits").get()
