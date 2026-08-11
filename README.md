@@ -64,6 +64,7 @@ El workflow `.github/workflows/email-reminders.yml` se ejecuta cada hora y proce
 - agenda de citas con vistas por día, semana y lista, filtro por profesional y prevención de horarios duplicados;
 - contabilidad con resúmenes separados de Cash, seguros y balances pendientes;
 - impresión y descarga en PDF del reporte de pagos con los filtros activos;
+- portada de acceso profesional con propuesta de valor, beneficios y vista previa del producto;
 - correo cuando el paciente autorizó email;
 - SMS cuando el paciente autorizó mensajes y Twilio está configurado.
 
