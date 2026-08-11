@@ -52,6 +52,19 @@
             <input id="registerClinicName" type="text" placeholder="Ej. Clínica San José" autocomplete="organization" required />
           </label>
           <label>
+            Dirección
+            <input id="registerClinicAddress" type="text" placeholder="Dirección de la clínica" autocomplete="street-address" required />
+          </label>
+          <label>
+            Teléfono
+            <input id="registerClinicPhone" type="tel" placeholder="(555) 123-4567" autocomplete="tel" required />
+          </label>
+          <label>
+            Logo de la clínica <small class="optional-label">(opcional)</small>
+            <input id="registerClinicLogo" type="file" accept="image/png,image/jpeg,image/webp" />
+            <small class="auth-field-note">PNG, JPG o WebP. Máximo 350 KB.</small>
+          </label>
+          <label>
             Correo electrónico
             <input id="registerEmail" type="email" placeholder="nombre@clinica.com" autocomplete="email" required />
             <small class="auth-field-note">Este correo será el remitente de las felicitaciones y recordatorios enviados a tus pacientes. Usa una cuenta de la clínica a la que tengas acceso.</small>
@@ -78,7 +91,7 @@
   <div class="app-shell hidden">
     <aside class="sidebar">
       <div class="brand">
-        <div class="logo-mark">
+        <div class="logo-mark" id="clinicBrandLogo">
           <span></span>
         </div>
         <div>
@@ -374,7 +387,8 @@
           </div>
         </div>
 
-        <form id="settingsForm" class="settings-card">
+        <form id="settingsForm" class="settings-card settings-sections">
+          <div class="settings-section-title full"><strong>Información de la clínica</strong><small>Estos datos identifican este espacio y aparecen en documentos.</small></div>
           <label>Nombre de la clínica
             <input id="clinicName" type="text" placeholder="Clinic Control" />
           </label>
@@ -387,7 +401,41 @@
           <label>Email
             <input id="clinicEmail" type="email" placeholder="admin@clinic.com" />
           </label>
-          <button class="btn primary" type="submit">Guardar cambios</button>
+          <div class="logo-setting full">
+            <div id="clinicLogoPreview" class="clinic-logo-preview"><span>Sin logo</span></div>
+            <label>Logo de la clínica
+              <input id="clinicLogoInput" type="file" accept="image/png,image/jpeg,image/webp" />
+              <small>PNG, JPG o WebP. Máximo 350 KB.</small>
+            </label>
+            <button class="btn light" type="button" id="removeClinicLogo">Quitar logo</button>
+          </div>
+
+          <div class="settings-section-title full section-spaced"><strong>Diseño de facturas</strong><small>Personaliza cómo se muestran, imprimen y descargan.</small></div>
+          <label>Prefijo de factura
+            <input id="invoicePrefix" type="text" maxlength="8" placeholder="FAC" />
+          </label>
+          <label>Color principal
+            <input id="invoiceAccentColor" type="color" value="#0f766e" />
+          </label>
+          <label>Posición del logo
+            <select id="invoiceLogoPosition">
+              <option value="left">Izquierda</option>
+              <option value="center">Centro</option>
+              <option value="right">Derecha</option>
+            </select>
+          </label>
+          <label class="full">Texto al pie de la factura
+            <textarea id="invoiceFooter" rows="2" placeholder="Gracias por confiar en nuestra clínica."></textarea>
+          </label>
+          <div class="invoice-field-options full">
+            <label><input id="invoiceShowAddress" type="checkbox" /> Mostrar dirección</label>
+            <label><input id="invoiceShowPhone" type="checkbox" /> Mostrar teléfono</label>
+            <label><input id="invoiceShowEmail" type="checkbox" /> Mostrar correo</label>
+            <label><input id="invoiceShowDoctor" type="checkbox" /> Mostrar doctor</label>
+            <label><input id="invoiceShowInsurance" type="checkbox" /> Mostrar seguro</label>
+          </div>
+          <div class="invoice-preview full" id="invoiceStylePreview"></div>
+          <button class="btn primary full" type="submit">Guardar cambios</button>
         </form>
       </section>
     </main>

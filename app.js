@@ -17,7 +17,17 @@ function buildSeedState() {
       clinicName: "",
       clinicAddress: "",
       clinicPhone: "",
-      clinicEmail: ""
+      clinicEmail: "",
+      clinicLogo: "",
+      invoicePrefix: "FAC",
+      invoiceAccentColor: "#0f766e",
+      invoiceLogoPosition: "left",
+      invoiceFooter: "Gracias por confiar en nuestra clínica.",
+      invoiceShowAddress: true,
+      invoiceShowPhone: true,
+      invoiceShowEmail: true,
+      invoiceShowDoctor: true,
+      invoiceShowInsurance: true
     },
     patients: [],
     visits: []
@@ -31,7 +41,17 @@ function normalizeState(saved) {
       clinicName: saved?.settings?.clinicName || seed.settings.clinicName,
       clinicAddress: saved?.settings?.clinicAddress || seed.settings.clinicAddress,
       clinicPhone: saved?.settings?.clinicPhone || seed.settings.clinicPhone,
-      clinicEmail: saved?.settings?.clinicEmail || seed.settings.clinicEmail
+      clinicEmail: saved?.settings?.clinicEmail || seed.settings.clinicEmail,
+      clinicLogo: saved?.settings?.clinicLogo || seed.settings.clinicLogo,
+      invoicePrefix: saved?.settings?.invoicePrefix || seed.settings.invoicePrefix,
+      invoiceAccentColor: saved?.settings?.invoiceAccentColor || seed.settings.invoiceAccentColor,
+      invoiceLogoPosition: saved?.settings?.invoiceLogoPosition || seed.settings.invoiceLogoPosition,
+      invoiceFooter: saved?.settings?.invoiceFooter ?? seed.settings.invoiceFooter,
+      invoiceShowAddress: saved?.settings?.invoiceShowAddress ?? seed.settings.invoiceShowAddress,
+      invoiceShowPhone: saved?.settings?.invoiceShowPhone ?? seed.settings.invoiceShowPhone,
+      invoiceShowEmail: saved?.settings?.invoiceShowEmail ?? seed.settings.invoiceShowEmail,
+      invoiceShowDoctor: saved?.settings?.invoiceShowDoctor ?? seed.settings.invoiceShowDoctor,
+      invoiceShowInsurance: saved?.settings?.invoiceShowInsurance ?? seed.settings.invoiceShowInsurance
     },
     patients: Array.isArray(saved?.patients) ? saved.patients : seed.patients,
     visits: Array.isArray(saved?.visits) ? saved.visits : seed.visits
@@ -276,7 +296,33 @@ function escapeHtml(value) {
 }
 
 function invoiceNumber(visit) {
-  return visit.invoiceNumber || `FAC-${String(visit.id || "").slice(0, 8).toUpperCase()}`;
+  const prefix = state.settings.invoicePrefix || "FAC";
+  return visit.invoiceNumber || `${prefix}-${String(visit.id || "").slice(0, 8).toUpperCase()}`;
+}
+
+function readLogoFile(file) {
+  return new Promise((resolve, reject) => {
+    if (!file) return resolve("");
+    if (!["image/png", "image/jpeg", "image/webp"].includes(file.type)) return reject(new Error("Formato de logo no válido."));
+    if (file.size > 350 * 1024) return reject(new Error("El logo debe pesar 350 KB o menos."));
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error("No se pudo leer el logo."));
+    reader.readAsDataURL(file);
+  });
+}
+
+function invoiceSettings() {
+  return {
+    accent: state.settings.invoiceAccentColor || "#0f766e",
+    logoPosition: state.settings.invoiceLogoPosition || "left",
+    footer: state.settings.invoiceFooter || "",
+    showAddress: state.settings.invoiceShowAddress !== false,
+    showPhone: state.settings.invoiceShowPhone !== false,
+    showEmail: state.settings.invoiceShowEmail !== false,
+    showDoctor: state.settings.invoiceShowDoctor !== false,
+    showInsurance: state.settings.invoiceShowInsurance !== false
+  };
 }
 
 function visitItems(visit) {
@@ -643,17 +689,23 @@ function openInvoice(id) {
   const p = patient(visit.patientId);
   const items = visitItems(visit);
   const due = balance(visit);
+  const design = invoiceSettings();
+  const clinicContacts = [
+    design.showAddress ? state.settings.clinicAddress : "",
+    design.showPhone ? state.settings.clinicPhone : "",
+    design.showEmail ? state.settings.clinicEmail : ""
+  ].filter(Boolean).join(" · ");
   activeInvoiceId = id;
   $("#invoiceDialogTitle").textContent = invoiceNumber(visit);
   $("#invoiceDetail").innerHTML = `
-    <article class="invoice-sheet">
+    <article class="invoice-sheet logo-${design.logoPosition}" style="--invoice-accent:${escapeHtml(design.accent)}">
       <header>
-        <div><h2>${escapeHtml(state.settings.clinicName || "Clinic Control")}</h2><p>${escapeHtml(state.settings.clinicAddress || "")}</p></div>
+        <div class="invoice-clinic-brand">${state.settings.clinicLogo ? `<img src="${state.settings.clinicLogo}" alt="Logo" />` : ""}<div><h2>${escapeHtml(state.settings.clinicName || "Clinic Control")}</h2><p>${escapeHtml(clinicContacts)}</p></div></div>
         <div class="invoice-heading"><strong>FACTURA</strong><span>${escapeHtml(invoiceNumber(visit))}</span></div>
       </header>
       <div class="invoice-meta">
         <div><small>Paciente</small><strong>${escapeHtml(p?.name || "Paciente eliminado")}</strong><span>${escapeHtml(p?.phone || "")}</span><span>${escapeHtml(payerLabel(p))}</span></div>
-        <div><small>Fecha</small><strong>${fmtDate(visit.date)}</strong><span>${escapeHtml(visit.doctor || "Sin doctor asignado")}</span></div>
+        <div><small>Fecha</small><strong>${fmtDate(visit.date)}</strong>${design.showDoctor ? `<span>${escapeHtml(visit.doctor || "Sin doctor asignado")}</span>` : ""}${design.showInsurance ? `<span>${escapeHtml(payerLabel(p))}</span>` : ""}</div>
       </div>
       <table class="invoice-items">
         <thead><tr><th>Descripción del servicio</th><th>Precio</th></tr></thead>
@@ -665,6 +717,7 @@ function openInvoice(id) {
         <div class="invoice-balance"><span>Balance</span><strong>${money(due)}</strong></div>
       </div>
       ${visit.notes ? `<div class="invoice-notes"><strong>Notas</strong><p>${escapeHtml(visit.notes)}</p></div>` : ""}
+      ${design.footer ? `<footer class="invoice-footer">${escapeHtml(design.footer)}</footer>` : ""}
     </article>`;
   $("#invoiceDialog").showModal();
 }
@@ -679,26 +732,39 @@ function downloadInvoicePdf(id = activeInvoiceId) {
 
   const p = patient(visit.patientId);
   const items = visitItems(visit);
+  const design = invoiceSettings();
   const { jsPDF } = window.jspdf;
   const pdf = new jsPDF({ unit: "pt", format: "letter" });
   const left = 48;
   const right = 564;
   let y = 52;
 
-  pdf.setTextColor(15, 118, 110);
+  const accentRgb = design.accent.match(/[a-f\d]{2}/gi)?.map((part) => parseInt(part, 16)) || [15, 118, 110];
+  pdf.setTextColor(...accentRgb);
   pdf.setFontSize(20);
   pdf.setFont("helvetica", "bold");
-  pdf.text(state.settings.clinicName || "Clinic Control", left, y);
+  let clinicNameX = left;
+  if (state.settings.clinicLogo) {
+    try {
+      const logoX = design.logoPosition === "right" ? 470 : (design.logoPosition === "center" ? 274 : left);
+      pdf.addImage(state.settings.clinicLogo, logoX, 22, 46, 30, undefined, "FAST");
+      if (design.logoPosition === "left") clinicNameX = 104;
+    } catch (error) {
+      console.warn("El logo no pudo agregarse al PDF.", error);
+    }
+  }
+  pdf.text(state.settings.clinicName || "Clinic Control", clinicNameX, y);
   pdf.setFontSize(17);
   pdf.text("FACTURA", right, y, { align: "right" });
   y += 22;
   pdf.setTextColor(80, 95, 115);
   pdf.setFontSize(10);
   pdf.setFont("helvetica", "normal");
-  pdf.text(state.settings.clinicAddress || "", left, y);
+  const pdfContacts = [design.showAddress ? state.settings.clinicAddress : "", design.showPhone ? state.settings.clinicPhone : "", design.showEmail ? state.settings.clinicEmail : ""].filter(Boolean).join(" · ");
+  pdf.text(pdfContacts, left, y);
   pdf.text(invoiceNumber(visit), right, y, { align: "right" });
   y += 24;
-  pdf.setDrawColor(20, 184, 166);
+  pdf.setDrawColor(...accentRgb);
   pdf.line(left, y, right, y);
   y += 28;
 
@@ -709,10 +775,10 @@ function downloadInvoicePdf(id = activeInvoiceId) {
   y += 17;
   pdf.setFont("helvetica", "normal");
   pdf.text(`Teléfono: ${p?.phone || "No indicado"}`, left, y);
-  pdf.text(`Doctor: ${visit.doctor || "No indicado"}`, 320, y);
+  if (design.showDoctor) pdf.text(`Doctor: ${visit.doctor || "No indicado"}`, 320, y);
   y += 17;
-  pdf.text(`Responsable de pago: ${payerLabel(p)}`, left, y);
-  if (p?.payerType === "insurance" && p.insuranceMemberId) pdf.text(`ID de miembro: ${p.insuranceMemberId}`, 320, y);
+  if (design.showInsurance) pdf.text(`Responsable de pago: ${payerLabel(p)}`, left, y);
+  if (design.showInsurance && p?.payerType === "insurance" && p.insuranceMemberId) pdf.text(`ID de miembro: ${p.insuranceMemberId}`, 320, y);
   y += 32;
 
   pdf.setFillColor(241, 245, 249);
@@ -745,6 +811,12 @@ function downloadInvoicePdf(id = activeInvoiceId) {
   y += 18;
   pdf.setTextColor(balance(visit) > 0 ? 185 : 4, balance(visit) > 0 ? 28 : 120, balance(visit) > 0 ? 28 : 87);
   pdf.text(`Balance: ${money(balance(visit))}`, right, y, { align: "right" });
+  if (design.footer) {
+    pdf.setTextColor(80, 95, 115);
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(9);
+    pdf.text(design.footer, 306, 750, { align: "center", maxWidth: 500 });
+  }
 
   pdf.save(`${invoiceNumber(visit)}-${(p?.name || "cliente").replace(/[^a-z0-9áéíóúñ]+/gi, "-")}.pdf`);
 }
@@ -810,6 +882,8 @@ function renderReports() {
 function renderSettings() {
   const clinicName = state.settings.clinicName || "Clinic Control";
   $("#clinicBrandName").textContent = clinicName;
+  $("#clinicBrandLogo").classList.toggle("has-clinic-logo", Boolean(state.settings.clinicLogo));
+  $("#clinicBrandLogo").innerHTML = state.settings.clinicLogo ? `<img src="${state.settings.clinicLogo}" alt="" />` : `<span></span>`;
   $("#heroClinicTitle").textContent = state.settings.clinicName
     ? `Control diario de ${state.settings.clinicName}`
     : "Control diario de la clínica";
@@ -818,6 +892,32 @@ function renderSettings() {
   $("#clinicAddress").value = state.settings.clinicAddress || "";
   $("#clinicPhone").value = state.settings.clinicPhone || "";
   $("#clinicEmail").value = state.settings.clinicEmail || "";
+  $("#invoicePrefix").value = state.settings.invoicePrefix || "FAC";
+  $("#invoiceAccentColor").value = state.settings.invoiceAccentColor || "#0f766e";
+  $("#invoiceLogoPosition").value = state.settings.invoiceLogoPosition || "left";
+  $("#invoiceFooter").value = state.settings.invoiceFooter ?? "Gracias por confiar en nuestra clínica.";
+  $("#invoiceShowAddress").checked = state.settings.invoiceShowAddress !== false;
+  $("#invoiceShowPhone").checked = state.settings.invoiceShowPhone !== false;
+  $("#invoiceShowEmail").checked = state.settings.invoiceShowEmail !== false;
+  $("#invoiceShowDoctor").checked = state.settings.invoiceShowDoctor !== false;
+  $("#invoiceShowInsurance").checked = state.settings.invoiceShowInsurance !== false;
+  $("#clinicLogoPreview").innerHTML = state.settings.clinicLogo
+    ? `<img src="${state.settings.clinicLogo}" alt="Logo de la clínica" />`
+    : `<span>Sin logo</span>`;
+  renderInvoiceStylePreview();
+}
+
+function renderInvoiceStylePreview() {
+  const preview = $("#invoiceStylePreview");
+  if (!preview) return;
+  const color = $("#invoiceAccentColor")?.value || "#0f766e";
+  const position = $("#invoiceLogoPosition")?.value || "left";
+  preview.style.setProperty("--preview-accent", color);
+  preview.className = `invoice-preview full logo-${position}`;
+  preview.innerHTML = `
+    <div class="preview-brand">${state.settings.clinicLogo ? `<img src="${state.settings.clinicLogo}" alt="" />` : `<span class="preview-logo-placeholder">LOGO</span>`}<strong>${escapeHtml($("#clinicName")?.value || "Nombre de la clínica")}</strong></div>
+    <div><b>FACTURA</b><small>${escapeHtml($("#invoicePrefix")?.value || "FAC")}-000001</small></div>
+    <p>${escapeHtml($("#invoiceFooter")?.value || "")}</p>`;
 }
 
 function openPatientDialog(p = null) {
@@ -1165,7 +1265,7 @@ $("#visitForm").addEventListener("submit", async (event) => {
     reason: $("#visitReason").value.trim(),
     notes: $("#visitNotes").value.trim(),
     lineItems,
-    invoiceNumber: existingVisit?.invoiceNumber || `FAC-${recordId.slice(0, 8).toUpperCase()}`,
+    invoiceNumber: existingVisit?.invoiceNumber || `${state.settings.invoicePrefix || "FAC"}-${recordId.slice(0, 8).toUpperCase()}`,
     total,
     paid
   };
@@ -1185,10 +1285,20 @@ $("#settingsForm").addEventListener("submit", async (event) => {
   event.preventDefault();
 
   state.settings = {
+    ...state.settings,
     clinicName: $("#clinicName").value.trim(),
     clinicAddress: $("#clinicAddress").value.trim(),
     clinicPhone: $("#clinicPhone").value.trim(),
-    clinicEmail: $("#clinicEmail").value.trim()
+    clinicEmail: $("#clinicEmail").value.trim(),
+    invoicePrefix: ($("#invoicePrefix").value.trim().toUpperCase().replace(/[^A-Z0-9-]/g, "") || "FAC"),
+    invoiceAccentColor: $("#invoiceAccentColor").value,
+    invoiceLogoPosition: $("#invoiceLogoPosition").value,
+    invoiceFooter: $("#invoiceFooter").value.trim(),
+    invoiceShowAddress: $("#invoiceShowAddress").checked,
+    invoiceShowPhone: $("#invoiceShowPhone").checked,
+    invoiceShowEmail: $("#invoiceShowEmail").checked,
+    invoiceShowDoctor: $("#invoiceShowDoctor").checked,
+    invoiceShowInsurance: $("#invoiceShowInsurance").checked
   };
 
   try {
@@ -1199,6 +1309,29 @@ $("#settingsForm").addEventListener("submit", async (event) => {
     console.error(error);
     toast("No se pudieron guardar los ajustes");
   }
+});
+
+$("#clinicLogoInput").addEventListener("change", async (event) => {
+  try {
+    state.settings.clinicLogo = await readLogoFile(event.target.files[0]);
+    renderSettings();
+    toast("Logo listo. Guarda los cambios para conservarlo.");
+  } catch (error) {
+    event.target.value = "";
+    toast(error.message);
+  }
+});
+
+$("#removeClinicLogo").addEventListener("click", () => {
+  state.settings.clinicLogo = "";
+  $("#clinicLogoInput").value = "";
+  renderSettings();
+  toast("Logo removido. Guarda los cambios.");
+});
+
+["clinicName", "invoicePrefix", "invoiceAccentColor", "invoiceLogoPosition", "invoiceFooter"].forEach((id) => {
+  document.getElementById(id).addEventListener("input", renderInvoiceStylePreview);
+  document.getElementById(id).addEventListener("change", renderInvoiceStylePreview);
 });
 
 $("#exportBtn").addEventListener("click", () => {
@@ -1242,11 +1375,13 @@ $("#loginForm").addEventListener("submit", async (event) => {
 $("#registerForm").addEventListener("submit", async (event) => {
   event.preventDefault();
   const clinicName = $("#registerClinicName").value.trim();
+  const clinicAddress = $("#registerClinicAddress").value.trim();
+  const clinicPhone = $("#registerClinicPhone").value.trim();
   const email = $("#registerEmail").value.trim().toLowerCase();
   const password = $("#registerPassword").value;
   const confirm = $("#registerConfirm").value;
 
-  if (!clinicName || !email || !password || !confirm) {
+  if (!clinicName || !clinicAddress || !clinicPhone || !email || !password || !confirm) {
     toast("Completa todos los campos de registro.");
     return;
   }
@@ -1267,16 +1402,27 @@ $("#registerForm").addEventListener("submit", async (event) => {
   }
 
   try {
+    const clinicLogo = await readLogoFile($("#registerClinicLogo").files[0]);
     initFirebase();
     const credential = await auth.createUserWithEmailAndPassword(email, password);
     await firestore.collection("clinics").doc(credential.user.uid).collection("settings").doc("clinic").set({
       clinicName,
-      clinicAddress: "",
-      clinicPhone: "",
+      clinicAddress,
+      clinicPhone,
       clinicEmail: email,
-      senderEmail: email
+      clinicLogo,
+      senderEmail: email,
+      invoicePrefix: "FAC",
+      invoiceAccentColor: "#0f766e",
+      invoiceLogoPosition: "left",
+      invoiceFooter: "Gracias por confiar en nuestra clínica.",
+      invoiceShowAddress: true,
+      invoiceShowPhone: true,
+      invoiceShowEmail: true,
+      invoiceShowDoctor: true,
+      invoiceShowInsurance: true
     }, { merge: true });
-    state.settings = { ...state.settings, clinicName, clinicEmail: email };
+    state.settings = { ...state.settings, clinicName, clinicAddress, clinicPhone, clinicEmail: email, clinicLogo };
     render();
     toast("Cuenta creada. Bienvenido.");
   } catch (error) {
