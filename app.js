@@ -11,6 +11,7 @@ let activeBillingTab = "all";
 let activeFinancePatientId = null;
 let pendingAppointmentId = null;
 let appointmentView = localStorage.getItem("clinicAppointmentView") || "day";
+let currentBillingRows = [];
 
 function uid() {
   if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
@@ -823,8 +824,8 @@ function billingSummaryCard(label, amount, hint, tone = "") {
   return `<article class="kpi-card billing-kpi ${tone}"><span class="kpi-label">${label}</span><strong>${money(amount)}</strong><small>${hint}</small></article>`;
 }
 
-function renderBillingSummary(visits) {
-  const totals = visits.reduce((acc, visit) => {
+function billingTotals(visits) {
+  return visits.reduce((acc, visit) => {
     const value = billingVisitAmounts(visit);
     acc.billed += value.total;
     if (value.type === "cash") acc.cashBilled += value.total;
@@ -835,6 +836,10 @@ function renderBillingSummary(visits) {
     acc.insurancePending += value.insurancePending;
     return acc;
   }, { billed: 0, cashBilled: 0, insuranceBilled: 0, patientPaid: 0, insurancePaid: 0, patientPending: 0, insurancePending: 0 });
+}
+
+function renderBillingSummary(visits) {
+  const totals = billingTotals(visits);
   const pending = totals.patientPending + totals.insurancePending;
   let cards = "";
   if (activeBillingTab === "cash") {
@@ -891,6 +896,7 @@ function renderBilling() {
     if (activeBillingTab === "pending" && balance(visit) <= 0) return false;
     return true;
   }).sort((a, b) => new Date(b.date) - new Date(a.date));
+  currentBillingRows = rows;
   renderBillingSummary(rows);
 
   $("#billingTable").innerHTML = rows.length ? rows.map((visit) => {
@@ -901,6 +907,50 @@ function renderBilling() {
     return `<tr><td data-label="Fecha / Factura">${fmtDate(visit.date)}<br><small>${escapeHtml(invoiceNumber(visit))}</small></td><td data-label="Paciente"><strong>${escapeHtml(p?.name || "Paciente eliminado")}</strong><br><small>${escapeHtml(type === "insurance" ? (p?.insuranceCompany || "Seguro no indicado") : "Pago propio")}</small></td><td data-label="Servicios">${visitItems(visit).length} servicio(s)<br><small>${escapeHtml(visitItems(visit).map((item) => item.description).join(", "))}</small></td><td data-label="Tipo"><span class="badge ${type === "insurance" ? "blue" : "green"}">${type === "insurance" ? "Seguro" : "Cash"}</span></td><td data-label="Facturado">${money(visit.total)}</td><td data-label="Paciente">${money(patientPaid)}</td><td data-label="Seguro">${money(visit.insurancePaid)}</td><td data-label="Balance"><strong>${money(balance(visit))}</strong></td><td data-label="Estado"><span class="badge ${status.color}">${status.label}</span></td><td><button class="btn light invoice-view" onclick="openPaymentDialog('${visit.id}')">Registrar pago</button></td></tr>`;
   }).join("") : `<tr><td class="empty" colspan="10">No hay pagos que coincidan con los filtros.</td></tr>`;
   renderPaymentHistory();
+}
+
+function billingReportTitle() {
+  return { all: "Resumen completo", cash: "Pagos Cash", insurance: "Pagos de seguros", pending: "Balances pendientes" }[activeBillingTab] || "Resumen completo";
+}
+
+function billingReportHtml() {
+  const totals = billingTotals(currentBillingRows);
+  const totalPending = totals.patientPending + totals.insurancePending;
+  const filters = [$("#billingDateFrom").value ? `Desde ${$("#billingDateFrom").value}` : "", $("#billingDateTo").value ? `Hasta ${$("#billingDateTo").value}` : "", $("#billingInsuranceFilter").value, $("#billingSearch").value].filter(Boolean).join(" · ");
+  return `<article class="billing-print-sheet"><header><div><h2>${escapeHtml(state.settings.clinicName || "Clinic Control")}</h2><p>${escapeHtml([state.settings.clinicAddress, state.settings.clinicPhone, state.settings.clinicEmail].filter(Boolean).join(" · "))}</p></div><div><strong>REPORTE DE PAGOS</strong><span>${new Date().toLocaleDateString("es-US")}</span></div></header><div class="billing-print-context"><strong>${billingReportTitle()}</strong><span>${escapeHtml(filters || "Sin filtros adicionales")}</span></div><div class="billing-print-summary"><div><span>Total facturado</span><strong>${money(totals.billed)}</strong></div><div><span>Facturado Cash</span><strong>${money(totals.cashBilled)}</strong></div><div><span>Cobrado pacientes</span><strong>${money(totals.patientPaid)}</strong></div><div><span>Facturado seguros</span><strong>${money(totals.insuranceBilled)}</strong></div><div><span>Cobrado seguros</span><strong>${money(totals.insurancePaid)}</strong></div><div><span>Balance total</span><strong>${money(totalPending)}</strong><small>Pacientes ${money(totals.patientPending)} · Seguros ${money(totals.insurancePending)}</small></div></div><table><thead><tr><th>Fecha / Factura</th><th>Paciente / Servicio</th><th>Tipo</th><th>Facturado</th><th>Paciente</th><th>Seguro</th><th>Balance</th></tr></thead><tbody>${currentBillingRows.map((visit) => { const p = patient(visit.patientId); const value = billingVisitAmounts(visit); return `<tr><td>${fmtDate(visit.date)}<small>${escapeHtml(invoiceNumber(visit))}</small></td><td><strong>${escapeHtml(p?.name || "Paciente eliminado")}</strong><small>${escapeHtml(visitItems(visit).map((item) => item.description).join(", ") || visit.reason || "Consulta")}</small></td><td>${value.type === "insurance" ? "Seguro" : "Cash"}</td><td>${money(value.total)}</td><td>${money(value.patientPaid)}</td><td>${money(value.insurancePaid)}</td><td>${money(value.patientPending + value.insurancePending)}</td></tr>`; }).join("") || `<tr><td colspan="7">No hay información para los filtros seleccionados.</td></tr>`}</tbody></table><footer>${currentBillingRows.length} registro(s) · Generado el ${new Date().toLocaleString("es-US")}</footer></article>`;
+}
+
+function printBillingReport() {
+  $("#billingReportPrint").innerHTML = billingReportHtml();
+  $("#billingReportDialog").showModal();
+  setTimeout(() => window.print(), 100);
+}
+
+function downloadBillingPdf() {
+  if (!window.jspdf?.jsPDF) { toast("No se pudo cargar el generador de PDF."); return; }
+  const { jsPDF } = window.jspdf;
+  const pdf = new jsPDF({ unit: "pt", format: "letter", orientation: "landscape" });
+  const totals = billingTotals(currentBillingRows);
+  const margin = 38;
+  const pageWidth = 792;
+  let y = 42;
+  pdf.setTextColor(15, 118, 110); pdf.setFont("helvetica", "bold"); pdf.setFontSize(18); pdf.text(state.settings.clinicName || "Clinic Control", margin, y);
+  pdf.setTextColor(23, 32, 51); pdf.setFontSize(15); pdf.text("REPORTE DE PAGOS", pageWidth - margin, y, { align: "right" });
+  y += 20; pdf.setFont("helvetica", "normal"); pdf.setFontSize(9); pdf.setTextColor(80, 95, 115); pdf.text(`${billingReportTitle()} · ${new Date().toLocaleDateString("es-US")}`, margin, y);
+  y += 25; pdf.setFont("helvetica", "bold"); pdf.setFontSize(10);
+  const summaryLines = [`Total facturado: ${money(totals.billed)}`, `Cash: ${money(totals.cashBilled)} / cobrado ${money(totals.patientPaid)}`, `Seguros: ${money(totals.insuranceBilled)} / cobrado ${money(totals.insurancePaid)}`, `Pendiente pacientes: ${money(totals.patientPending)}`, `Pendiente seguros: ${money(totals.insurancePending)}`];
+  pdf.text(summaryLines.join("    "), margin, y, { maxWidth: pageWidth - margin * 2 }); y += 30;
+  const columns = [margin, 112, 305, 385, 468, 555, 642, 750];
+  const headers = ["Fecha / factura", "Paciente / servicio", "Tipo", "Facturado", "Paciente", "Seguro", "Balance"];
+  const drawHeader = () => { pdf.setFillColor(226, 232, 240); pdf.rect(margin, y - 14, pageWidth - margin * 2, 22, "F"); pdf.setTextColor(23, 32, 51); pdf.setFont("helvetica", "bold"); pdf.setFontSize(8); headers.forEach((header, index) => pdf.text(header, columns[index] + 3, y)); y += 18; };
+  drawHeader(); pdf.setFont("helvetica", "normal");
+  currentBillingRows.forEach((visit) => {
+    const p = patient(visit.patientId); const value = billingVisitAmounts(visit); const service = visitItems(visit).map((item) => item.description).join(", ") || visit.reason || "Consulta";
+    const patientLines = pdf.splitTextToSize(`${p?.name || "Paciente"} · ${service}`, 185); const rowHeight = Math.max(22, patientLines.length * 9 + 6);
+    if (y + rowHeight > 570) { pdf.addPage(); y = 42; drawHeader(); }
+    pdf.setTextColor(23, 32, 51); pdf.setFontSize(7.5); pdf.text(`${fmtDate(visit.date)}\n${invoiceNumber(visit)}`, columns[0] + 3, y); pdf.text(patientLines, columns[1] + 3, y); pdf.text(value.type === "insurance" ? "Seguro" : "Cash", columns[2] + 3, y); pdf.text(money(value.total), columns[3] + 3, y); pdf.text(money(value.patientPaid), columns[4] + 3, y); pdf.text(money(value.insurancePaid), columns[5] + 3, y); pdf.text(money(value.patientPending + value.insurancePending), columns[6] + 3, y); y += rowHeight; pdf.setDrawColor(226, 232, 240); pdf.line(margin, y - 5, pageWidth - margin, y - 5);
+  });
+  pdf.save(`reporte-pagos-${activeBillingTab}-${localDateValue()}.pdf`);
 }
 
 function renderPaymentHistory() {
@@ -1568,6 +1618,8 @@ window.editVisit = editVisit;
 window.deleteVisit = deleteVisit;
 window.openInvoice = openInvoice;
 window.downloadInvoicePdf = downloadInvoicePdf;
+window.printBillingReport = printBillingReport;
+window.downloadBillingPdf = downloadBillingPdf;
 window.openAppointmentDialog = openAppointmentDialog;
 window.editAppointment = editAppointment;
 window.deleteAppointment = deleteAppointment;
@@ -1617,6 +1669,8 @@ $("#billingDateFrom").addEventListener("change", renderBilling);
 $("#billingDateTo").addEventListener("change", renderBilling);
 $("#billingInsuranceFilter").addEventListener("change", renderBilling);
 $("#quickPaymentBtn").addEventListener("click", () => openPaymentDialog());
+$("#printBillingBtn").addEventListener("click", printBillingReport);
+$("#downloadBillingPdfBtn").addEventListener("click", downloadBillingPdf);
 $("#paymentVisit").addEventListener("change", updatePaymentContext);
 $("#patientFinancePaymentBtn").addEventListener("click", () => {
   $("#patientFinanceDialog").close();

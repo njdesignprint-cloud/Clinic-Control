@@ -1083,6 +1083,22 @@ button {
   padding: 0 14px;
   background: white;
 }
+.billing-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.billing-report-modal { width: min(1120px, calc(100vw - 28px)); }
+.billing-print-sheet { color: #172033; background: white; }
+.billing-print-sheet > header { display: flex; justify-content: space-between; gap: 20px; padding-bottom: 15px; border-bottom: 3px solid var(--primary); }
+.billing-print-sheet header h2, .billing-print-sheet header p { margin: 0; }
+.billing-print-sheet header p, .billing-print-sheet header span { display: block; margin-top: 5px; color: var(--muted); font-size: 11px; }
+.billing-print-sheet header > div:last-child { text-align: right; }
+.billing-print-context { display: flex; justify-content: space-between; gap: 15px; margin: 15px 0; }
+.billing-print-context span { color: var(--muted); font-size: 11px; }
+.billing-print-summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 16px; }
+.billing-print-summary > div { display: grid; gap: 3px; padding: 10px; border: 1px solid var(--line); border-radius: 10px; background: #f8fafc; }
+.billing-print-summary span, .billing-print-summary small { color: var(--muted); font-size: 10px; }
+.billing-print-summary strong { font-size: 18px; }
+.billing-print-sheet table { width: 100%; font-size: 10px; }
+.billing-print-sheet td small { display: block; margin-top: 3px; }
+.billing-print-sheet footer { margin-top: 14px; color: var(--muted); font-size: 10px; text-align: right; }
 
 .panel-toolbar input:focus,
 .modal input:focus,
@@ -2589,6 +2605,13 @@ dialog::backdrop {
   body:has(#invoiceDialog[open]) #invoiceDialog .modal-actions {
     display: none !important;
   }
+  body:has(#billingReportDialog[open]) .app-shell,
+  body:has(#billingReportDialog[open]) #toast { display: none !important; }
+  body:has(#billingReportDialog[open]) #billingReportDialog { display: block !important; position: static; width: 100%; max-height: none; }
+  body:has(#billingReportDialog[open]) #billingReportDialog .modal { width: 100%; max-height: none; padding: 0; box-shadow: none; }
+  body:has(#billingReportDialog[open]) #billingReportDialog .modal-head,
+  body:has(#billingReportDialog[open]) #billingReportDialog .modal-actions { display: none !important; }
+  body:has(#billingReportDialog[open]) #billingReportDialog .modal-body { padding: 0; overflow: visible; }
 }
 .auth-field-note {
   display: block;

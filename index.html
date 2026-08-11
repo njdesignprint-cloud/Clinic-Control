@@ -354,7 +354,7 @@
             <h2>Pagos y contabilidad</h2>
             <p>Control unificado de pagos de pacientes y reclamaciones de seguros.</p>
           </div>
-          <button class="btn primary" id="quickPaymentBtn">Registrar pago</button>
+          <div class="billing-actions"><button class="btn light" id="printBillingBtn">Imprimir</button><button class="btn light" id="downloadBillingPdfBtn">Descargar PDF</button><button class="btn primary" id="quickPaymentBtn">Registrar pago</button></div>
         </div>
 
         <div id="billingSummary" class="kpi-grid billing-summary"></div>
@@ -704,6 +704,14 @@
       </div></div>
       <div class="modal-actions"><button type="button" class="btn light" data-close="paymentDialog">Cancelar</button><button type="submit" class="btn primary">Aplicar pago</button></div>
     </form>
+  </dialog>
+
+  <dialog id="billingReportDialog" class="report-dialog">
+    <div class="modal billing-report-modal">
+      <div class="modal-head"><div><small>Pagos y contabilidad</small><h3>Reporte financiero</h3></div><button type="button" class="close-btn" data-close="billingReportDialog">×</button></div>
+      <div class="modal-body" id="billingReportPrint"></div>
+      <div class="modal-actions"><button type="button" class="btn light" data-close="billingReportDialog">Cerrar</button><button type="button" class="btn primary" onclick="window.print()">Imprimir</button></div>
+    </div>
   </dialog>
 
   <dialog id="patientFinanceDialog">
