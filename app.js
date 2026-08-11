@@ -10,6 +10,7 @@ let activeInvoiceId = null;
 let activeBillingTab = "all";
 let activeFinancePatientId = null;
 let pendingAppointmentId = null;
+let appointmentView = localStorage.getItem("clinicAppointmentView") || "day";
 
 function uid() {
   if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
@@ -672,6 +673,82 @@ function renderPatients() {
 function renderVisitOptions() {
   $("#visitPatient").innerHTML = state.patients.map((p) => `<option value="${p.id}">${p.name}</option>`).join("");
   if ($("#appointmentPatient")) $("#appointmentPatient").innerHTML = state.patients.map((p) => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join("");
+  renderAppointmentDoctorOptions();
+}
+
+function appointmentDoctors() {
+  return [...new Set([...state.appointments, ...state.visits].map((item) => String(item.doctor || "").trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+}
+
+function renderAppointmentDoctorOptions() {
+  const doctors = appointmentDoctors();
+  const datalist = $("#appointmentDoctorOptions");
+  if (datalist) datalist.innerHTML = doctors.map((name) => `<option value="${escapeHtml(name)}"></option>`).join("");
+  const filter = $("#appointmentDoctorFilter");
+  if (!filter) return;
+  const selected = filter.value;
+  filter.innerHTML = `<option value="">Todos los profesionales</option>${doctors.map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join("")}`;
+  if (doctors.includes(selected)) filter.value = selected;
+}
+
+function startOfAppointmentWeek(value) {
+  const date = new Date(`${value}T12:00:00`);
+  const mondayOffset = (date.getDay() + 6) % 7;
+  date.setDate(date.getDate() - mondayOffset);
+  return date;
+}
+
+function addLocalDays(date, days) {
+  const result = new Date(date);
+  result.setDate(result.getDate() + days);
+  return result;
+}
+
+function appointmentMatchesFilters(item, query, statusFilter, doctorFilter) {
+  const p = patient(item.patientId);
+  if (statusFilter && item.status !== statusFilter) return false;
+  if (doctorFilter && item.doctor !== doctorFilter) return false;
+  return `${p?.name || ""} ${item.doctor || ""} ${item.reason || ""}`.toLowerCase().includes(query);
+}
+
+function appointmentCardContent(item, compact = false) {
+  const p = patient(item.patientId);
+  const status = appointmentStatus(item.status);
+  const time = new Date(item.date).toLocaleTimeString("es-US", { hour: "2-digit", minute: "2-digit" });
+  if (compact) return `<button type="button" class="calendar-event status-${item.status}" onclick="event.stopPropagation(); editAppointment('${item.id}')" title="${escapeHtml(`${time} · ${p?.name || "Paciente"} · ${item.reason || "Cita"}`)}"><strong>${time} ${escapeHtml(p?.name || "Paciente")}</strong><span>${escapeHtml(item.reason || "Cita")} · ${item.duration || 30} min</span></button>`;
+  return `<article class="appointment-card status-${item.status}">
+    <div class="appointment-time"><strong>${time}</strong><span>${item.duration || 30} min</span></div>
+    <div class="appointment-main"><div><h3>${escapeHtml(p?.name || "Paciente eliminado")}</h3><p>${escapeHtml(item.reason || "Sin motivo")}</p></div><span class="badge ${status.color}">${status.label}</span><div class="appointment-meta"><span>${escapeHtml(item.type || "Presencial")}</span><span>${escapeHtml(item.doctor || "Sin profesional")}</span><span>${escapeHtml(p?.phone || "Sin teléfono")}</span></div></div>
+    <div class="appointment-actions">
+      ${item.status === "scheduled" ? `<button class="btn light" onclick="setAppointmentStatus('${item.id}','confirmed')">Confirmar</button>` : ""}
+      ${["scheduled", "confirmed"].includes(item.status) ? `<button class="btn light" onclick="setAppointmentStatus('${item.id}','arrived')">Llegó</button>` : ""}
+      ${!["completed", "cancelled", "no_show"].includes(item.status) ? `<button class="btn primary" onclick="startAppointmentVisit('${item.id}')">Iniciar consulta</button>` : ""}
+      <button class="icon-btn" onclick="editAppointment('${item.id}')" title="Editar">✎</button>
+      ${!["completed", "cancelled"].includes(item.status) ? `<button class="icon-btn danger-icon" onclick="cancelAppointment('${item.id}')" title="Cancelar cita">×</button>` : ""}
+    </div></article>`;
+}
+
+function renderDayCalendar(rows, dateValue) {
+  const active = rows.filter((item) => !["cancelled", "no_show"].includes(item.status));
+  const hours = Array.from({ length: 14 }, (_, index) => index + 7);
+  return `<div class="day-calendar"><div class="calendar-day-title"><strong>${new Date(`${dateValue}T12:00:00`).toLocaleDateString("es-US", { weekday: "long", day: "numeric", month: "long" })}</strong><span>${active.length} cita(s) activa(s)</span></div>${hours.map((hour) => {
+    const slots = [0, 30].map((minute) => {
+      const slotItems = rows.filter((item) => { const date = new Date(item.date); return date.getHours() === hour && date.getMinutes() >= minute && date.getMinutes() < minute + 30; });
+      const stamp = `${dateValue}T${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+      return `<div class="calendar-slot" onclick="openAppointmentAt('${stamp}')">${slotItems.map((item) => appointmentCardContent(item, true)).join("")}</div>`;
+    }).join("");
+    return `<div class="calendar-hour"><time>${new Date(`${dateValue}T${String(hour).padStart(2, "0")}:00`).toLocaleTimeString("es-US", { hour: "numeric" })}</time><div>${slots}</div></div>`;
+  }).join("")}</div>`;
+}
+
+function renderWeekCalendar(rows, dateValue) {
+  const monday = startOfAppointmentWeek(dateValue);
+  const days = Array.from({ length: 7 }, (_, index) => addLocalDays(monday, index));
+  return `<div class="week-calendar">${days.map((date) => {
+    const key = localDateValue(date);
+    const items = rows.filter((item) => String(item.date || "").slice(0, 10) === key).sort((a, b) => new Date(a.date) - new Date(b.date));
+    return `<section class="week-day ${key === localDateValue() ? "today" : ""}"><button type="button" class="week-day-head" onclick="showAppointmentDay('${key}')"><span>${date.toLocaleDateString("es-US", { weekday: "short" })}</span><strong>${date.getDate()}</strong></button><div class="week-day-body">${items.length ? items.map((item) => appointmentCardContent(item, true)).join("") : `<button type="button" class="week-empty" onclick="openAppointmentAt('${key}T09:00')">+ Agregar</button>`}</div></section>`;
+  }).join("")}</div>`;
 }
 
 function renderAppointments() {
@@ -681,30 +758,18 @@ function renderAppointments() {
   if (!$("#appointmentDateFilter").value) $("#appointmentDateFilter").value = dateValue;
   const query = ($("#appointmentSearch").value || "").toLowerCase().trim();
   const statusFilter = $("#appointmentStatusFilter").value;
-  const dayRows = [...state.appointments].filter((item) => {
-    const p = patient(item.patientId);
-    if (String(item.date || "").slice(0, 10) !== dateValue) return false;
-    if (statusFilter && item.status !== statusFilter) return false;
-    return `${p?.name || ""} ${item.doctor || ""} ${item.reason || ""}`.toLowerCase().includes(query);
-  }).sort((a, b) => new Date(a.date) - new Date(b.date));
+  const doctorFilter = $("#appointmentDoctorFilter")?.value || "";
+  renderAppointmentDoctorOptions();
+  $$('[data-appointment-view]').forEach((button) => button.classList.toggle("active", button.dataset.appointmentView === appointmentView));
+  const filteredRows = [...state.appointments].filter((item) => appointmentMatchesFilters(item, query, statusFilter, doctorFilter));
+  const dayRows = filteredRows.filter((item) => String(item.date || "").slice(0, 10) === dateValue).sort((a, b) => new Date(a.date) - new Date(b.date));
   const allDay = state.appointments.filter((item) => String(item.date || "").slice(0, 10) === dateValue);
   const countBy = (status) => allDay.filter((item) => item.status === status).length;
   $("#appointmentSummary").innerHTML = `
     <div><strong>${allDay.length}</strong><span>Total</span></div><div><strong>${countBy("confirmed")}</strong><span>Confirmadas</span></div><div><strong>${countBy("arrived")}</strong><span>En espera</span></div><div><strong>${countBy("completed")}</strong><span>Atendidas</span></div>`;
-  agenda.innerHTML = dayRows.length ? dayRows.map((item) => {
-    const p = patient(item.patientId);
-    const status = appointmentStatus(item.status);
-    const time = new Date(item.date).toLocaleTimeString("es-US", { hour: "2-digit", minute: "2-digit" });
-    return `<article class="appointment-card status-${item.status}">
-      <div class="appointment-time"><strong>${time}</strong><span>${item.duration || 30} min</span></div>
-      <div class="appointment-main"><div><h3>${escapeHtml(p?.name || "Paciente eliminado")}</h3><p>${escapeHtml(item.reason || "Sin motivo")}</p></div><span class="badge ${status.color}">${status.label}</span><div class="appointment-meta"><span>${escapeHtml(item.type || "Presencial")}</span><span>${escapeHtml(item.doctor || "Sin doctor")}</span><span>${escapeHtml(p?.phone || "Sin teléfono")}</span></div></div>
-      <div class="appointment-actions">
-        ${item.status === "scheduled" ? `<button class="btn light" onclick="setAppointmentStatus('${item.id}','confirmed')">Confirmar</button>` : ""}
-        ${["scheduled", "confirmed"].includes(item.status) ? `<button class="btn light" onclick="setAppointmentStatus('${item.id}','arrived')">Llegó</button>` : ""}
-        ${!["completed", "cancelled", "no_show"].includes(item.status) ? `<button class="btn primary" onclick="startAppointmentVisit('${item.id}')">Iniciar consulta</button>` : ""}
-        <button class="icon-btn" onclick="editAppointment('${item.id}')" title="Editar">✎</button><button class="icon-btn" onclick="deleteAppointment('${item.id}')" title="Eliminar">⌫</button>
-      </div></article>`;
-  }).join("") : `<div class="empty agenda-empty"><strong>Agenda libre</strong><span>No hay citas para esta fecha y filtros.</span><button class="btn primary" onclick="openAppointmentDialog()">Crear una cita</button></div>`;
+  if (appointmentView === "day") agenda.innerHTML = renderDayCalendar(dayRows, dateValue);
+  else if (appointmentView === "week") agenda.innerHTML = renderWeekCalendar(filteredRows, dateValue);
+  else agenda.innerHTML = dayRows.length ? dayRows.map((item) => appointmentCardContent(item)).join("") : `<div class="empty agenda-empty"><strong>Agenda libre</strong><span>No hay citas para esta fecha y filtros.</span><button class="btn primary" onclick="openAppointmentDialog()">Crear una cita</button></div>`;
 }
 
 function renderVisits() {
@@ -1109,6 +1174,20 @@ function openAppointmentDialog(item = null) {
   requestAnimationFrame(() => $("#appointmentPatient").focus());
 }
 
+function openAppointmentAt(date) {
+  openAppointmentDialog();
+  $("#appointmentDate").value = date;
+  const selectedDoctor = $("#appointmentDoctorFilter")?.value;
+  if (selectedDoctor) $("#appointmentDoctor").value = selectedDoctor;
+}
+
+function showAppointmentDay(date) {
+  appointmentView = "day";
+  localStorage.setItem("clinicAppointmentView", appointmentView);
+  $("#appointmentDateFilter").value = date;
+  renderAppointments();
+}
+
 function editAppointment(id) {
   const item = state.appointments.find((appointment) => appointment.id === id);
   if (item) openAppointmentDialog(item);
@@ -1117,6 +1196,32 @@ function editAppointment(id) {
 async function deleteAppointment(id) {
   if (!confirm("¿Eliminar esta cita?")) return;
   try { await deleteAppointmentEntry(id); toast("Cita eliminada"); } catch (error) { console.error(error); toast("No se pudo eliminar la cita"); }
+}
+
+async function cancelAppointment(id) {
+  const item = state.appointments.find((appointment) => appointment.id === id);
+  if (!item) return;
+  const reason = prompt("Motivo de cancelación (opcional):", item.cancellationReason || "");
+  if (reason === null) return;
+  try {
+    await saveAppointment({ ...item, status: "cancelled", cancellationReason: reason.trim(), cancelledAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+    toast("Cita cancelada y conservada en el historial");
+  } catch (error) { console.error(error); toast("No se pudo cancelar la cita"); }
+}
+
+function findAppointmentConflict(candidate) {
+  const candidateStart = new Date(candidate.date).getTime();
+  const candidateEnd = candidateStart + candidate.duration * 60000;
+  return state.appointments.find((item) => {
+    if (item.id === candidate.id || ["cancelled", "no_show"].includes(item.status)) return false;
+    const itemStart = new Date(item.date).getTime();
+    const itemEnd = itemStart + Number(item.duration || 30) * 60000;
+    const overlaps = candidateStart < itemEnd && candidateEnd > itemStart;
+    if (!overlaps) return false;
+    const samePatient = item.patientId === candidate.patientId;
+    const sameDoctor = candidate.doctor && item.doctor && candidate.doctor.toLowerCase() === item.doctor.toLowerCase();
+    return samePatient || sameDoctor;
+  });
 }
 
 async function setAppointmentStatus(id, status) {
@@ -1418,6 +1523,9 @@ window.downloadInvoicePdf = downloadInvoicePdf;
 window.openAppointmentDialog = openAppointmentDialog;
 window.editAppointment = editAppointment;
 window.deleteAppointment = deleteAppointment;
+window.cancelAppointment = cancelAppointment;
+window.openAppointmentAt = openAppointmentAt;
+window.showAppointmentDay = showAppointmentDay;
 window.setAppointmentStatus = setAppointmentStatus;
 window.startAppointmentVisit = startAppointmentVisit;
 window.openPaymentDialog = openPaymentDialog;
@@ -1475,12 +1583,18 @@ $("#downloadInvoiceBtn").addEventListener("click", () => downloadInvoicePdf());
 
 $("#appointmentSearch").addEventListener("input", renderAppointments);
 $("#appointmentStatusFilter").addEventListener("change", renderAppointments);
+$("#appointmentDoctorFilter").addEventListener("change", renderAppointments);
 $("#appointmentDateFilter").addEventListener("change", renderAppointments);
+$$('[data-appointment-view]').forEach((button) => button.addEventListener("click", () => {
+  appointmentView = button.dataset.appointmentView;
+  localStorage.setItem("clinicAppointmentView", appointmentView);
+  renderAppointments();
+}));
 $("#appointmentToday").addEventListener("click", () => { $("#appointmentDateFilter").value = localDateValue(); renderAppointments(); });
 function shiftAppointmentDay(days) {
   const value = $("#appointmentDateFilter").value || localDateValue();
   const date = new Date(`${value}T12:00:00`);
-  date.setDate(date.getDate() + days);
+  date.setDate(date.getDate() + (appointmentView === "week" ? days * 7 : days));
   $("#appointmentDateFilter").value = localDateValue(date);
   renderAppointments();
 }
@@ -1549,6 +1663,12 @@ $("#appointmentForm").addEventListener("submit", async (event) => {
     visitId: existing?.visitId || ""
   };
   if (!data.patientId || !data.date || data.reason.length < 2) { toast("Completa paciente, fecha y motivo."); return; }
+  const conflict = findAppointmentConflict(data);
+  if (conflict) {
+    const conflictPatient = patient(conflict.patientId);
+    toast(`Horario ocupado por ${conflictPatient?.name || "otra cita"}.`);
+    return;
+  }
   try { await saveAppointment(data); $("#appointmentDialog").close(); $("#appointmentDateFilter").value = data.date.slice(0, 10); renderAppointments(); toast(existing ? "Cita actualizada" : "Cita programada"); } catch (error) { console.error(error); toast("No se pudo guardar la cita"); }
 });
 

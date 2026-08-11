@@ -61,6 +61,7 @@ El workflow `.github/workflows/email-reminders.yml` se ejecuta cada hora y proce
 
 - felicitaciones de cumpleaños autorizadas;
 - recordatorios de citas 3 días antes, 2 días antes y 3 horas antes;
+- agenda de citas con vistas por día, semana y lista, filtro por profesional y prevención de horarios duplicados;
 - correo cuando el paciente autorizó email;
 - SMS cuando el paciente autorizó mensajes y Twilio está configurado.
 
