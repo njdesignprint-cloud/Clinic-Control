@@ -1,9 +1,8 @@
-name: Correos automáticos
+name: Recordatorios automáticos
 
 on:
   schedule:
-    - cron: "17 8 * * *"
-      timezone: "America/Chicago"
+    - cron: "17 * * * *"
   workflow_dispatch:
     inputs:
       dry_run:
@@ -16,7 +15,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: clinic-control-email-reminders
+  group: clinic-control-appointment-reminders
   cancel-in-progress: false
 
 jobs:
@@ -35,11 +34,14 @@ jobs:
       - name: Instalar dependencias
         run: npm install --prefix automation --no-audit --no-fund
 
-      - name: Revisar cumpleaños y citas
+      - name: Revisar cumpleaños y recordatorios de citas
         env:
           FIREBASE_SERVICE_ACCOUNT_B64: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_B64 }}
           GMAIL_USER: ${{ secrets.GMAIL_USER }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          TWILIO_ACCOUNT_SID: ${{ secrets.TWILIO_ACCOUNT_SID }}
+          TWILIO_AUTH_TOKEN: ${{ secrets.TWILIO_AUTH_TOKEN }}
+          TWILIO_PHONE_NUMBER: ${{ secrets.TWILIO_PHONE_NUMBER }}
           CLINIC_TIME_ZONE: America/Chicago
           DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
         run: node automation/send-emails.js

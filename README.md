@@ -57,10 +57,12 @@ service cloud.firestore {
 
 ## Correos automáticos gratuitos
 
-El workflow `.github/workflows/email-reminders.yml` se ejecuta diariamente a las 8:17 a. m. en la zona `America/Chicago` y envía mediante Gmail:
+El workflow `.github/workflows/email-reminders.yml` se ejecuta cada hora y procesa:
 
 - felicitaciones de cumpleaños autorizadas;
-- recordatorios de citas programadas aproximadamente 24 horas antes.
+- recordatorios de citas 3 días antes, 2 días antes y 3 horas antes;
+- correo cuando el paciente autorizó email;
+- SMS cuando el paciente autorizó mensajes y Twilio está configurado.
 
 Los mensajes usan Español o Inglés según la preferencia del paciente. Cada envío se registra en la colección `emailLogs` para evitar duplicados.
 
@@ -87,6 +89,14 @@ En GitHub abre **Settings > Secrets and variables > Actions** y crea:
 - `FIREBASE_SERVICE_ACCOUNT_B64`: el valor Base64 copiado.
 - `GMAIL_USER`: el correo completo de Gmail.
 - `GMAIL_APP_PASSWORD`: la contraseña de aplicación, sin espacios.
+
+Para habilitar SMS agrega también:
+
+- `TWILIO_ACCOUNT_SID`: identificador de la cuenta Twilio.
+- `TWILIO_AUTH_TOKEN`: token secreto de Twilio.
+- `TWILIO_PHONE_NUMBER`: número remitente en formato internacional, por ejemplo `+17135550100`.
+
+Sin estas tres credenciales, los correos continúan funcionando y los SMS se omiten de forma segura.
 
 Nunca subas el archivo JSON ni escribas estas credenciales en `app.js`. El `.gitignore` impide incluir accidentalmente archivos comunes de cuentas de servicio.
 
