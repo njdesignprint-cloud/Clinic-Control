@@ -1,11 +1,15 @@
-let state = { settings: {}, patients: [], visits: [] };
+let state = { settings: {}, patients: [], visits: [], appointments: [], payments: [] };
 let firestore = null;
 let auth = null;
 let unsubscribeSettings = null;
 let unsubscribePatients = null;
 let unsubscribeVisits = null;
+let unsubscribeAppointments = null;
+let unsubscribePayments = null;
 let activeInvoiceId = null;
 let activeBillingTab = "all";
+let activeFinancePatientId = null;
+let pendingAppointmentId = null;
 
 function uid() {
   if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
@@ -31,7 +35,9 @@ function buildSeedState() {
       invoiceShowInsurance: true
     },
     patients: [],
-    visits: []
+    visits: [],
+    appointments: [],
+    payments: []
   };
 }
 
@@ -55,7 +61,9 @@ function normalizeState(saved) {
       invoiceShowInsurance: saved?.settings?.invoiceShowInsurance ?? seed.settings.invoiceShowInsurance
     },
     patients: Array.isArray(saved?.patients) ? saved.patients : seed.patients,
-    visits: Array.isArray(saved?.visits) ? saved.visits : seed.visits
+    visits: Array.isArray(saved?.visits) ? saved.visits : seed.visits,
+    appointments: Array.isArray(saved?.appointments) ? saved.appointments : seed.appointments,
+    payments: Array.isArray(saved?.payments) ? saved.payments : seed.payments
   };
 }
 
@@ -132,9 +140,13 @@ function unsubscribeAll() {
   if (unsubscribeSettings) unsubscribeSettings();
   if (unsubscribePatients) unsubscribePatients();
   if (unsubscribeVisits) unsubscribeVisits();
+  if (unsubscribeAppointments) unsubscribeAppointments();
+  if (unsubscribePayments) unsubscribePayments();
   unsubscribeSettings = null;
   unsubscribePatients = null;
   unsubscribeVisits = null;
+  unsubscribeAppointments = null;
+  unsubscribePayments = null;
 }
 
 function showAuthScreen() {
@@ -149,7 +161,7 @@ function showAppScreen() {
 }
 
 function clearState() {
-  state = { settings: {}, patients: [], visits: [] };
+  state = { settings: {}, patients: [], visits: [], appointments: [], payments: [] };
   render();
 }
 
@@ -159,6 +171,8 @@ function subscribeToRealtime() {
   const settingsRef = getClinicDocRef().collection("settings").doc("clinic");
   const patientsRef = getCollectionRef("patients");
   const visitsRef = getCollectionRef("visits");
+  const appointmentsRef = getCollectionRef("appointments");
+  const paymentsRef = getCollectionRef("payments");
 
   unsubscribeSettings = settingsRef.onSnapshot((doc) => {
     if (doc.exists) {
@@ -174,6 +188,14 @@ function subscribeToRealtime() {
 
   unsubscribeVisits = visitsRef.onSnapshot((snapshot) => {
     state.visits = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+    render();
+  });
+  unsubscribeAppointments = appointmentsRef.onSnapshot((snapshot) => {
+    state.appointments = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+    render();
+  });
+  unsubscribePayments = paymentsRef.onSnapshot((snapshot) => {
+    state.payments = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
     render();
   });
 }
@@ -258,6 +280,33 @@ async function saveVisit(data) {
   await getCollectionRef("visits").doc(data.id).set({ ...data }, { merge: true });
 }
 
+async function saveAppointment(data) {
+  await ensureAuth();
+  await getCollectionRef("appointments").doc(data.id).set({ ...data }, { merge: true });
+}
+
+async function deleteAppointmentEntry(id) {
+  await ensureAuth();
+  await getCollectionRef("appointments").doc(id).delete();
+}
+
+async function registerPayment(data, visit) {
+  await ensureAuth();
+  const sourceField = data.source === "insurance" ? "insurancePaid" : "patientPaid";
+  const currentPatientPaid = visit.patientPaid !== undefined ? Number(visit.patientPaid || 0) : (paymentType(visit) === "cash" ? Number(visit.paid || 0) : 0);
+  const currentInsurancePaid = visit.insurancePaid !== undefined ? Number(visit.insurancePaid || 0) : (paymentType(visit) === "insurance" ? Number(visit.paid || 0) : 0);
+  const updatedPatientPaid = sourceField === "patientPaid" ? currentPatientPaid + data.amount : currentPatientPaid;
+  const updatedInsurancePaid = sourceField === "insurancePaid" ? currentInsurancePaid + data.amount : currentInsurancePaid;
+  const batch = firestore.batch();
+  batch.set(getCollectionRef("payments").doc(data.id), data);
+  batch.set(getCollectionRef("visits").doc(visit.id), {
+    patientPaid: updatedPatientPaid,
+    insurancePaid: updatedInsurancePaid,
+    paid: updatedPatientPaid + updatedInsurancePaid
+  }, { merge: true });
+  await batch.commit();
+}
+
 async function saveSettings() {
   await ensureAuth();
   await getClinicDocRef().collection("settings").doc("clinic").set(state.settings, { merge: true });
@@ -266,9 +315,13 @@ async function saveSettings() {
 async function deletePatientEntry(id) {
   await ensureAuth();
   const visitSnap = await getCollectionRef("visits").where("patientId", "==", id).get();
+  const appointmentSnap = await getCollectionRef("appointments").where("patientId", "==", id).get();
+  const paymentSnap = await getCollectionRef("payments").where("patientId", "==", id).get();
   const batch = firestore.batch();
   batch.delete(getCollectionRef("patients").doc(id));
   visitSnap.docs.forEach((doc) => batch.delete(getCollectionRef("visits").doc(doc.id)));
+  appointmentSnap.docs.forEach((doc) => batch.delete(doc.ref));
+  paymentSnap.docs.forEach((doc) => batch.delete(doc.ref));
   await batch.commit();
 }
 
@@ -334,7 +387,7 @@ function visitItems(visit) {
     price: Number(item.price ?? (Number(item.quantity || 1) * Number(item.unitPrice || 0)))
   }));
   if (Number(visit?.total || 0) > 0) {
-    return [{ id: uid(), description: visit.reason || "Consulta", price: Number(visit.total) }];
+    return [{ id: uid(), description: visit.reason || "Consulta", quantity: 1, unitPrice: Number(visit.total), price: Number(visit.total) }];
   }
   return [];
 }
@@ -420,6 +473,24 @@ function financialStatus(visit) {
   return { key: "pending", label: "Pendiente", color: "red" };
 }
 
+const appointmentStatuses = {
+  scheduled: { label: "Programada", color: "blue" },
+  confirmed: { label: "Confirmada", color: "green" },
+  arrived: { label: "En espera", color: "orange" },
+  completed: { label: "Atendida", color: "green" },
+  cancelled: { label: "Cancelada", color: "red" },
+  no_show: { label: "No asistió", color: "red" }
+};
+
+function appointmentStatus(value) {
+  return appointmentStatuses[value] || appointmentStatuses.scheduled;
+}
+
+function localDateValue(date = new Date()) {
+  const offset = date.getTimezoneOffset() * 60000;
+  return new Date(date.getTime() - offset).toISOString().slice(0, 10);
+}
+
 function totals(visits = state.visits) {
   return visits.reduce((acc, visit) => {
     acc.billed += Number(visit.total || 0);
@@ -443,6 +514,7 @@ function showPage(pageId) {
   const labels = {
     dashboard: "Dashboard",
     patients: "Pacientes",
+    appointments: "Citas",
     visits: "Consultas",
     billing: "Pagos",
     invoices: "Facturas",
@@ -457,6 +529,7 @@ function showPage(pageId) {
 function render() {
   renderDashboard();
   renderPatients();
+  renderAppointments();
   renderVisitOptions();
   renderVisits();
   renderBilling();
@@ -575,7 +648,7 @@ function renderFinanceBars(data) {
 
 function renderPatients() {
   const query = ($("#patientSearch")?.value || "").toLowerCase().trim();
-  const rows = state.patients.filter((p) => `${p.name} ${p.phone} ${p.email || ""} ${p.document} ${p.language || ""}`.toLowerCase().includes(query));
+  const rows = state.patients.filter((p) => `${p.name} ${p.phone} ${p.email || ""} ${p.document} ${p.language || ""} ${p.notes || ""} ${p.insuranceCompany || ""} ${p.insuranceMemberId || ""} ${p.insuranceGroup || ""}`.toLowerCase().includes(query));
 
   $("#patientsTable").innerHTML = rows.length ? rows.map((p) => `
     <tr>
@@ -588,6 +661,7 @@ function renderPatients() {
       <td>
         <div class="row-actions">
           <button class="icon-btn" onclick="editPatient('${p.id}')" title="Editar">✎</button>
+          <button class="icon-btn finance-patient-btn" onclick="openPatientFinance('${p.id}')" title="Ver cuenta">$</button>
           <button class="icon-btn" onclick="deletePatient('${p.id}')" title="Eliminar">⌫</button>
         </div>
       </td>
@@ -597,6 +671,40 @@ function renderPatients() {
 
 function renderVisitOptions() {
   $("#visitPatient").innerHTML = state.patients.map((p) => `<option value="${p.id}">${p.name}</option>`).join("");
+  if ($("#appointmentPatient")) $("#appointmentPatient").innerHTML = state.patients.map((p) => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join("");
+}
+
+function renderAppointments() {
+  const agenda = $("#appointmentAgenda");
+  if (!agenda) return;
+  const dateValue = $("#appointmentDateFilter").value || localDateValue();
+  if (!$("#appointmentDateFilter").value) $("#appointmentDateFilter").value = dateValue;
+  const query = ($("#appointmentSearch").value || "").toLowerCase().trim();
+  const statusFilter = $("#appointmentStatusFilter").value;
+  const dayRows = [...state.appointments].filter((item) => {
+    const p = patient(item.patientId);
+    if (String(item.date || "").slice(0, 10) !== dateValue) return false;
+    if (statusFilter && item.status !== statusFilter) return false;
+    return `${p?.name || ""} ${item.doctor || ""} ${item.reason || ""}`.toLowerCase().includes(query);
+  }).sort((a, b) => new Date(a.date) - new Date(b.date));
+  const allDay = state.appointments.filter((item) => String(item.date || "").slice(0, 10) === dateValue);
+  const countBy = (status) => allDay.filter((item) => item.status === status).length;
+  $("#appointmentSummary").innerHTML = `
+    <div><strong>${allDay.length}</strong><span>Total</span></div><div><strong>${countBy("confirmed")}</strong><span>Confirmadas</span></div><div><strong>${countBy("arrived")}</strong><span>En espera</span></div><div><strong>${countBy("completed")}</strong><span>Atendidas</span></div>`;
+  agenda.innerHTML = dayRows.length ? dayRows.map((item) => {
+    const p = patient(item.patientId);
+    const status = appointmentStatus(item.status);
+    const time = new Date(item.date).toLocaleTimeString("es-US", { hour: "2-digit", minute: "2-digit" });
+    return `<article class="appointment-card status-${item.status}">
+      <div class="appointment-time"><strong>${time}</strong><span>${item.duration || 30} min</span></div>
+      <div class="appointment-main"><div><h3>${escapeHtml(p?.name || "Paciente eliminado")}</h3><p>${escapeHtml(item.reason || "Sin motivo")}</p></div><span class="badge ${status.color}">${status.label}</span><div class="appointment-meta"><span>${escapeHtml(item.type || "Presencial")}</span><span>${escapeHtml(item.doctor || "Sin doctor")}</span><span>${escapeHtml(p?.phone || "Sin teléfono")}</span></div></div>
+      <div class="appointment-actions">
+        ${item.status === "scheduled" ? `<button class="btn light" onclick="setAppointmentStatus('${item.id}','confirmed')">Confirmar</button>` : ""}
+        ${["scheduled", "confirmed"].includes(item.status) ? `<button class="btn light" onclick="setAppointmentStatus('${item.id}','arrived')">Llegó</button>` : ""}
+        ${!["completed", "cancelled", "no_show"].includes(item.status) ? `<button class="btn primary" onclick="startAppointmentVisit('${item.id}')">Iniciar consulta</button>` : ""}
+        <button class="icon-btn" onclick="editAppointment('${item.id}')" title="Editar">✎</button><button class="icon-btn" onclick="deleteAppointment('${item.id}')" title="Eliminar">⌫</button>
+      </div></article>`;
+  }).join("") : `<div class="empty agenda-empty"><strong>Agenda libre</strong><span>No hay citas para esta fecha y filtros.</span><button class="btn primary" onclick="openAppointmentDialog()">Crear una cita</button></div>`;
 }
 
 function renderVisits() {
@@ -633,6 +741,11 @@ function renderVisits() {
 }
 
 function renderBilling() {
+  const insuranceSelect = $("#billingInsuranceFilter");
+  const selectedInsurance = insuranceSelect.value;
+  const insuranceCompanies = [...new Set(state.patients.map((p) => p.insuranceCompany).filter(Boolean))].sort();
+  insuranceSelect.innerHTML = `<option value="">Todos los seguros</option>${insuranceCompanies.map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join("")}`;
+  if (insuranceCompanies.includes(selectedInsurance)) insuranceSelect.value = selectedInsurance;
   const summary = state.visits.reduce((acc, visit) => {
     acc.billed += Number(visit.total || 0);
     acc.patient += visit.patientPaid !== undefined ? Number(visit.patientPaid || 0) : (paymentType(visit) === "cash" ? Number(visit.paid || 0) : 0);
@@ -648,6 +761,9 @@ function renderBilling() {
 
   const query = ($("#billingSearch")?.value || "").toLowerCase().trim();
   const statusFilter = $("#billingStatusFilter")?.value || "";
+  const dateFrom = $("#billingDateFrom")?.value || "";
+  const dateTo = $("#billingDateTo")?.value || "";
+  const insuranceFilter = $("#billingInsuranceFilter")?.value || "";
   const rows = [...state.visits].filter((visit) => {
     const p = patient(visit.patientId);
     const type = paymentType(visit);
@@ -656,6 +772,10 @@ function renderBilling() {
     if (activeBillingTab === "insurance" && type !== "insurance") return false;
     if (activeBillingTab === "pending" && balance(visit) <= 0) return false;
     if (statusFilter && status.key !== statusFilter) return false;
+    const visitDate = String(visit.date || "").slice(0, 10);
+    if (dateFrom && visitDate < dateFrom) return false;
+    if (dateTo && visitDate > dateTo) return false;
+    if (insuranceFilter && p?.insuranceCompany !== insuranceFilter) return false;
     const searchable = `${p?.name || ""} ${p?.insuranceCompany || ""} ${invoiceNumber(visit)} ${visitItems(visit).map((item) => item.description).join(" ")}`.toLowerCase();
     return searchable.includes(query);
   }).sort((a, b) => new Date(b.date) - new Date(a.date));
@@ -665,8 +785,21 @@ function renderBilling() {
     const type = paymentType(visit);
     const status = financialStatus(visit);
     const patientPaid = visit.patientPaid !== undefined ? Number(visit.patientPaid || 0) : (type === "cash" ? Number(visit.paid || 0) : 0);
-    return `<tr><td>${fmtDate(visit.date)}<br><small>${escapeHtml(invoiceNumber(visit))}</small></td><td><strong>${escapeHtml(p?.name || "Paciente eliminado")}</strong><br><small>${escapeHtml(type === "insurance" ? (p?.insuranceCompany || "Seguro no indicado") : "Pago propio")}</small></td><td>${visitItems(visit).length} servicio(s)<br><small>${escapeHtml(visitItems(visit).map((item) => item.description).join(", "))}</small></td><td><span class="badge ${type === "insurance" ? "blue" : "green"}">${type === "insurance" ? "Seguro" : "Cash"}</span></td><td>${money(visit.total)}</td><td>${money(patientPaid)}</td><td>${money(visit.insurancePaid)}</td><td><strong>${money(balance(visit))}</strong></td><td><span class="badge ${status.color}">${status.label}</span></td><td><button class="btn light invoice-view" onclick="editVisit('${visit.id}')">Gestionar</button></td></tr>`;
+    return `<tr><td data-label="Fecha / Factura">${fmtDate(visit.date)}<br><small>${escapeHtml(invoiceNumber(visit))}</small></td><td data-label="Paciente"><strong>${escapeHtml(p?.name || "Paciente eliminado")}</strong><br><small>${escapeHtml(type === "insurance" ? (p?.insuranceCompany || "Seguro no indicado") : "Pago propio")}</small></td><td data-label="Servicios">${visitItems(visit).length} servicio(s)<br><small>${escapeHtml(visitItems(visit).map((item) => item.description).join(", "))}</small></td><td data-label="Tipo"><span class="badge ${type === "insurance" ? "blue" : "green"}">${type === "insurance" ? "Seguro" : "Cash"}</span></td><td data-label="Facturado">${money(visit.total)}</td><td data-label="Paciente">${money(patientPaid)}</td><td data-label="Seguro">${money(visit.insurancePaid)}</td><td data-label="Balance"><strong>${money(balance(visit))}</strong></td><td data-label="Estado"><span class="badge ${status.color}">${status.label}</span></td><td><button class="btn light invoice-view" onclick="openPaymentDialog('${visit.id}')">Registrar pago</button></td></tr>`;
   }).join("") : `<tr><td class="empty" colspan="10">No hay pagos que coincidan con los filtros.</td></tr>`;
+  renderPaymentHistory();
+}
+
+function renderPaymentHistory() {
+  const box = $("#paymentHistory");
+  if (!box) return;
+  const payments = [...state.payments].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 30);
+  box.innerHTML = payments.length ? payments.map((entry) => {
+    const p = patient(entry.patientId);
+    const visit = state.visits.find((item) => item.id === entry.visitId);
+    const methodLabels = { cash: "Efectivo", card: "Tarjeta", check: "Cheque", transfer: "Transferencia", insurance_eft: "EFT seguro", other: "Otro" };
+    return `<div class="payment-history-row"><div class="payment-source-icon ${entry.source}">${entry.source === "insurance" ? "S" : "$"}</div><div><strong>${escapeHtml(p?.name || "Paciente eliminado")}</strong><span>${fmtDate(entry.date)} · ${escapeHtml(methodLabels[entry.method] || entry.method || "Pago")}${entry.reference ? ` · ${escapeHtml(entry.reference)}` : ""}</span><small>${escapeHtml(invoiceNumber(visit || { id: entry.visitId }))}${entry.note ? ` · ${escapeHtml(entry.note)}` : ""}</small></div><strong>${money(entry.amount)}</strong></div>`;
+  }).join("") : `<div class="empty">Todavía no hay movimientos individuales. Los pagos nuevos aparecerán aquí.</div>`;
 }
 
 function renderInvoices() {
@@ -744,9 +877,11 @@ function openInvoice(id) {
       </table>
       <div class="invoice-summary">
         <div><span>Total</span><strong>${money(visit.total)}</strong></div>
-        <div><span>Pagado</span><strong>${money(totalPaid(visit))}</strong></div>
+        <div><span>Pagado por paciente</span><strong>${money(visit.patientPaid ?? (paymentType(visit) === "cash" ? visit.paid : 0))}</strong></div>
+        ${paymentType(visit) === "insurance" ? `<div><span>Pagado por seguro</span><strong>${money(visit.insurancePaid ?? visit.paid)}</strong></div><div><span>Copago esperado</span><strong>${money(visit.copay)}</strong></div>` : ""}
         <div class="invoice-balance"><span>Balance</span><strong>${money(due)}</strong></div>
       </div>
+      ${paymentType(visit) === "insurance" ? `<div class="invoice-claim"><div><small>Reclamación</small><strong>${escapeHtml(visit.claimNumber || "Sin número")}</strong></div><div><small>Estado</small><strong>${escapeHtml({draft:"Preparada",submitted:"Enviada",processing:"En proceso",paid:"Pagada",partial:"Pago parcial",rejected:"Rechazada"}[visit.claimStatus] || "No indicado")}</strong></div></div>` : ""}
       ${visit.notes ? `<div class="invoice-notes"><strong>Notas</strong><p>${escapeHtml(visit.notes)}</p></div>` : ""}
       ${design.footer ? `<footer class="invoice-footer">${escapeHtml(design.footer)}</footer>` : ""}
     </article>`;
@@ -955,6 +1090,90 @@ function renderInvoiceStylePreview() {
     <p>${escapeHtml($("#invoiceFooter")?.value || "")}</p>`;
 }
 
+function openAppointmentDialog(item = null) {
+  if (!state.patients.length) { toast("Primero registra un paciente."); openPatientDialog(); return; }
+  renderVisitOptions();
+  $("#appointmentDialogTitle").textContent = item ? "Editar cita" : "Nueva cita";
+  $("#appointmentId").value = item?.id || "";
+  $("#appointmentPatient").value = item?.patientId || state.patients[0].id;
+  const defaultDate = `${$("#appointmentDateFilter")?.value || localDateValue()}T09:00`;
+  $("#appointmentDate").value = item?.date || defaultDate;
+  $("#appointmentDuration").value = String(item?.duration || 30);
+  $("#appointmentType").value = item?.type || "Presencial";
+  $("#appointmentDoctor").value = item?.doctor || "";
+  $("#appointmentStatus").value = item?.status || "scheduled";
+  $("#appointmentReason").value = item?.reason || "";
+  $("#appointmentReminder").checked = item ? Boolean(item.reminderEnabled) : true;
+  $("#appointmentNotes").value = item?.notes || "";
+  $("#appointmentDialog").showModal();
+  requestAnimationFrame(() => $("#appointmentPatient").focus());
+}
+
+function editAppointment(id) {
+  const item = state.appointments.find((appointment) => appointment.id === id);
+  if (item) openAppointmentDialog(item);
+}
+
+async function deleteAppointment(id) {
+  if (!confirm("¿Eliminar esta cita?")) return;
+  try { await deleteAppointmentEntry(id); toast("Cita eliminada"); } catch (error) { console.error(error); toast("No se pudo eliminar la cita"); }
+}
+
+async function setAppointmentStatus(id, status) {
+  const item = state.appointments.find((appointment) => appointment.id === id);
+  if (!item) return;
+  try { await saveAppointment({ ...item, status, updatedAt: new Date().toISOString() }); toast(`Cita ${appointmentStatus(status).label.toLowerCase()}`); } catch (error) { console.error(error); toast("No se pudo actualizar la cita"); }
+}
+
+async function startAppointmentVisit(id) {
+  const item = state.appointments.find((appointment) => appointment.id === id);
+  if (!item) return;
+  await setAppointmentStatus(id, "arrived");
+  showPage("visits");
+  openVisitDialog({ patientId: item.patientId, date: item.date, type: item.type, doctor: item.doctor, reason: item.reason, notes: item.notes, status: "Completada", appointmentId: item.id });
+}
+
+function openPaymentDialog(visitId = "", patientId = "") {
+  const eligible = state.visits.filter((visit) => balance(visit) > 0 && (!patientId || visit.patientId === patientId));
+  if (!eligible.length) { toast("No hay facturas con balance pendiente."); return; }
+  $("#paymentVisit").innerHTML = eligible.map((visit) => `<option value="${visit.id}">${escapeHtml(patient(visit.patientId)?.name || "Paciente")} · ${escapeHtml(invoiceNumber(visit))} · ${money(balance(visit))}</option>`).join("");
+  $("#paymentVisit").value = eligible.some((visit) => visit.id === visitId) ? visitId : eligible[0].id;
+  $("#paymentDate").value = new Date().toISOString().slice(0, 16);
+  $("#paymentAmount").value = "";
+  $("#paymentReference").value = "";
+  $("#paymentNote").value = "";
+  updatePaymentContext();
+  $("#paymentDialog").showModal();
+  requestAnimationFrame(() => $("#paymentAmount").focus());
+}
+
+function updatePaymentContext() {
+  const visit = state.visits.find((item) => item.id === $("#paymentVisit").value);
+  if (!visit) return;
+  const p = patient(visit.patientId);
+  const insured = paymentType(visit) === "insurance";
+  $("#paymentSource").value = insured ? "insurance" : "patient";
+  $("#paymentMethod").value = insured ? "insurance_eft" : "cash";
+  $("#paymentAmount").max = balance(visit).toFixed(2);
+  $("#paymentContext").innerHTML = `<div><small>Paciente</small><strong>${escapeHtml(p?.name || "Paciente")}</strong></div><div><small>Factura</small><strong>${escapeHtml(invoiceNumber(visit))}</strong></div><div><small>Balance actual</small><strong>${money(balance(visit))}</strong></div>`;
+}
+
+function openPatientFinance(id) {
+  const p = patient(id);
+  if (!p) return;
+  activeFinancePatientId = id;
+  const visits = state.visits.filter((visit) => visit.patientId === id).sort((a, b) => new Date(b.date) - new Date(a.date));
+  const entries = state.payments.filter((entry) => entry.patientId === id).sort((a, b) => new Date(b.date) - new Date(a.date));
+  const data = totals(visits);
+  $("#patientFinanceTitle").textContent = p.name;
+  $("#patientFinanceDetail").innerHTML = `<div class="finance-profile-summary"><div><small>Facturado</small><strong>${money(data.billed)}</strong></div><div><small>Pagado</small><strong>${money(data.paid)}</strong></div><div><small>Balance</small><strong>${money(data.debt)}</strong></div></div>
+    <div class="finance-profile-info"><span>${escapeHtml(p.phone || "Sin teléfono")}</span><span>${escapeHtml(payerLabel(p))}</span>${p.insuranceMemberId ? `<span>Póliza: ${escapeHtml(p.insuranceMemberId)}</span>` : ""}</div>
+    <h4>Facturas y consultas</h4><div class="finance-profile-list">${visits.length ? visits.map((visit) => `<div><span>${fmtDate(visit.date)}<small>${escapeHtml(invoiceNumber(visit))} · ${escapeHtml(visit.reason || "Consulta")}</small></span><strong>${money(balance(visit))}<small>balance</small></strong><button class="btn light" onclick="openInvoice('${visit.id}')">Factura</button></div>`).join("") : `<div class="empty">Sin facturas.</div>`}</div>
+    <h4>Movimientos</h4><div class="finance-profile-list">${entries.length ? entries.map((entry) => `<div><span>${fmtDate(entry.date)}<small>${entry.source === "insurance" ? "Seguro" : "Paciente"} · ${escapeHtml(entry.reference || entry.method || "Pago")}</small></span><strong>${money(entry.amount)}</strong></div>`).join("") : `<div class="empty">Sin movimientos individuales.</div>`}</div>`;
+  $("#patientFinancePaymentBtn").disabled = data.debt <= 0;
+  $("#patientFinanceDialog").showModal();
+}
+
 function openPatientDialog(p = null) {
   $("#patientDialogTitle").textContent = p ? "Editar paciente" : "Nuevo paciente";
   $("#patientSubmitBtn").textContent = p ? "Guardar cambios" : "Guardar paciente";
@@ -989,15 +1208,16 @@ function openVisitDialog(visit = null) {
   }
 
   renderVisitOptions();
+  pendingAppointmentId = visit?.appointmentId || null;
 
-  $("#visitDialogTitle").textContent = visit ? "Editar consulta" : "Nueva consulta";
+  $("#visitDialogTitle").textContent = visit?.id ? "Editar consulta" : "Nueva consulta";
   $("#visitId").value = visit?.id || "";
   $("#visitPatient").value = visit?.patientId || state.patients[0].id;
   $("#visitType").value = visit?.type || "Presencial";
   $("#visitDate").value = visit?.date || new Date().toISOString().slice(0, 16);
   $("#visitDoctor").value = visit?.doctor || "";
-  $("#visitStatus").value = visit?.status || (visit ? "Completada" : "Programada");
-  $("#visitReminderEnabled").checked = visit ? Boolean(visit.reminderEnabled) : true;
+  $("#visitStatus").value = visit?.status || (visit?.id ? "Completada" : "Programada");
+  $("#visitReminderEnabled").checked = visit?.id ? Boolean(visit.reminderEnabled) : false;
   renderVisitLineItems(visitItems(visit));
   const inferredType = visit ? paymentType(visit) : (patient($("#visitPatient").value)?.payerType === "insurance" ? "insurance" : "cash");
   $("#visitPaymentType").value = inferredType;
@@ -1195,6 +1415,13 @@ window.editVisit = editVisit;
 window.deleteVisit = deleteVisit;
 window.openInvoice = openInvoice;
 window.downloadInvoicePdf = downloadInvoicePdf;
+window.openAppointmentDialog = openAppointmentDialog;
+window.editAppointment = editAppointment;
+window.deleteAppointment = deleteAppointment;
+window.setAppointmentStatus = setAppointmentStatus;
+window.startAppointmentVisit = startAppointmentVisit;
+window.openPaymentDialog = openPaymentDialog;
+window.openPatientFinance = openPatientFinance;
 
 $$(".nav-item").forEach((button) => button.addEventListener("click", () => showPage(button.dataset.page)));
 $$("[data-go]").forEach((button) => button.addEventListener("click", () => showPage(button.dataset.go)));
@@ -1217,8 +1444,10 @@ $$("[data-auth-tab]").forEach((button) => {
 $("#quickPatientBtn").addEventListener("click", () => openPatientDialog());
 $("#dashNewPatient").addEventListener("click", () => openPatientDialog());
 $("#patientCreateBtn").addEventListener("click", () => openPatientDialog());
+$("#appointmentCreateBtn").addEventListener("click", () => openAppointmentDialog());
 
 $("#quickVisitBtn").addEventListener("click", () => openVisitDialog());
+$("#dashNewAppointment").addEventListener("click", () => openAppointmentDialog());
 $("#dashNewVisit").addEventListener("click", () => openVisitDialog());
 $("#visitCreateBtn").addEventListener("click", () => openVisitDialog());
 
@@ -1228,12 +1457,35 @@ $("#invoiceSearch").addEventListener("input", renderInvoices);
 $("#invoicePatientFilter").addEventListener("change", renderInvoices);
 $("#billingSearch").addEventListener("input", renderBilling);
 $("#billingStatusFilter").addEventListener("change", renderBilling);
+$("#billingDateFrom").addEventListener("change", renderBilling);
+$("#billingDateTo").addEventListener("change", renderBilling);
+$("#billingInsuranceFilter").addEventListener("change", renderBilling);
+$("#quickPaymentBtn").addEventListener("click", () => openPaymentDialog());
+$("#paymentVisit").addEventListener("change", updatePaymentContext);
+$("#patientFinancePaymentBtn").addEventListener("click", () => {
+  $("#patientFinanceDialog").close();
+  openPaymentDialog("", activeFinancePatientId);
+});
 $$('[data-billing-tab]').forEach((button) => button.addEventListener("click", () => {
   activeBillingTab = button.dataset.billingTab;
   $$('[data-billing-tab]').forEach((tab) => tab.classList.toggle("active", tab === button));
   renderBilling();
 }));
 $("#downloadInvoiceBtn").addEventListener("click", () => downloadInvoicePdf());
+
+$("#appointmentSearch").addEventListener("input", renderAppointments);
+$("#appointmentStatusFilter").addEventListener("change", renderAppointments);
+$("#appointmentDateFilter").addEventListener("change", renderAppointments);
+$("#appointmentToday").addEventListener("click", () => { $("#appointmentDateFilter").value = localDateValue(); renderAppointments(); });
+function shiftAppointmentDay(days) {
+  const value = $("#appointmentDateFilter").value || localDateValue();
+  const date = new Date(`${value}T12:00:00`);
+  date.setDate(date.getDate() + days);
+  $("#appointmentDateFilter").value = localDateValue(date);
+  renderAppointments();
+}
+$("#appointmentPrevDay").addEventListener("click", () => shiftAppointmentDay(-1));
+$("#appointmentNextDay").addEventListener("click", () => shiftAppointmentDay(1));
 
 $("#globalSearch").addEventListener("input", (event) => {
   const value = event.target.value.trim();
@@ -1275,6 +1527,40 @@ $("#visitReason").addEventListener("input", validateVisitForm);
 $("#addVisitLineItem").addEventListener("click", () => {
   renderVisitLineItems([...collectVisitLineItems(), { id: uid(), description: "", price: "" }]);
   $("#visitLineItems .service-line:last-child .service-description").focus();
+});
+
+$("#appointmentForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const id = $("#appointmentId").value || uid();
+  const existing = state.appointments.find((item) => item.id === id);
+  const data = {
+    id,
+    patientId: $("#appointmentPatient").value,
+    date: $("#appointmentDate").value,
+    duration: Number($("#appointmentDuration").value || 30),
+    type: $("#appointmentType").value,
+    doctor: $("#appointmentDoctor").value.trim(),
+    status: $("#appointmentStatus").value,
+    reason: $("#appointmentReason").value.trim(),
+    reminderEnabled: $("#appointmentReminder").checked,
+    notes: $("#appointmentNotes").value.trim(),
+    createdAt: existing?.createdAt || new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    visitId: existing?.visitId || ""
+  };
+  if (!data.patientId || !data.date || data.reason.length < 2) { toast("Completa paciente, fecha y motivo."); return; }
+  try { await saveAppointment(data); $("#appointmentDialog").close(); $("#appointmentDateFilter").value = data.date.slice(0, 10); renderAppointments(); toast(existing ? "Cita actualizada" : "Cita programada"); } catch (error) { console.error(error); toast("No se pudo guardar la cita"); }
+});
+
+$("#paymentForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const visit = state.visits.find((item) => item.id === $("#paymentVisit").value);
+  const amount = Number($("#paymentAmount").value || 0);
+  const message = !visit ? "Selecciona una factura." : amount <= 0 ? "Indica un monto mayor que cero." : amount > balance(visit) ? "El pago no puede superar el balance pendiente." : "";
+  setFieldError($("#paymentAmount"), $("#paymentAmountError"), message);
+  if (message) return;
+  const entry = { id: uid(), visitId: visit.id, patientId: visit.patientId, source: $("#paymentSource").value, amount, method: $("#paymentMethod").value, date: $("#paymentDate").value, reference: $("#paymentReference").value.trim(), note: $("#paymentNote").value.trim(), createdAt: new Date().toISOString() };
+  try { await registerPayment(entry, visit); $("#paymentDialog").close(); toast("Pago aplicado correctamente"); } catch (error) { console.error(error); toast("No se pudo registrar el pago"); }
 });
 
 $("#patientForm").addEventListener("submit", async (event) => {
@@ -1346,11 +1632,17 @@ $("#visitForm").addEventListener("submit", async (event) => {
     paymentType: $("#visitPaymentType").value,
     claimStatus: $("#visitPaymentType").value === "insurance" ? $("#visitClaimStatus").value : "",
     claimNumber: $("#visitPaymentType").value === "insurance" ? $("#visitClaimNumber").value.trim() : "",
-    copay: $("#visitPaymentType").value === "insurance" ? Number($("#visitCopay").value || 0) : 0
+    copay: $("#visitPaymentType").value === "insurance" ? Number($("#visitCopay").value || 0) : 0,
+    appointmentId: existingVisit?.appointmentId || pendingAppointmentId || ""
   };
 
   try {
     await saveVisit(data);
+    if (data.appointmentId) {
+      const appointment = state.appointments.find((item) => item.id === data.appointmentId);
+      if (appointment) await saveAppointment({ ...appointment, status: "completed", visitId: data.id, updatedAt: new Date().toISOString() });
+    }
+    pendingAppointmentId = null;
     $("#visitDialog").close();
     render();
     toast(id ? "Consulta actualizada" : "Consulta registrada");

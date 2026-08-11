@@ -149,18 +149,26 @@ async function sendAppointmentReminders(clinicNames) {
   const now = new Date();
   const windowStart = new Date(now.getTime() + 23 * 60 * 60 * 1000);
   const windowEnd = new Date(now.getTime() + 25 * 60 * 60 * 1000);
-  const visits = await db.collectionGroup("visits").get();
+  const [appointments, visits] = await Promise.all([
+    db.collectionGroup("appointments").get(),
+    db.collectionGroup("visits").get()
+  ]);
+  const records = [
+    ...appointments.docs.map((doc) => ({ doc, data: doc.data(), isAppointment: true })),
+    ...visits.docs.map((doc) => ({ doc, data: doc.data(), isAppointment: false }))
+  ];
   let sent = 0;
 
-  for (const doc of visits.docs) {
-    const visit = doc.data();
-    if (visit.status !== "Programada" || !visit.reminderEnabled || !visit.date) continue;
-    const appointmentDate = new Date(visit.date);
+  for (const record of records) {
+    const { doc, data, isAppointment } = record;
+    const eligibleStatus = isAppointment ? ["scheduled", "confirmed"].includes(data.status) : data.status === "Programada";
+    if (!eligibleStatus || !data.reminderEnabled || !data.date) continue;
+    const appointmentDate = new Date(data.date);
     if (Number.isNaN(appointmentDate.getTime()) || appointmentDate < windowStart || appointmentDate > windowEnd) continue;
 
     const clinicRef = doc.ref.parent.parent;
-    if (!clinicRef || !visit.patientId) continue;
-    const patientDoc = await clinicRef.collection("patients").doc(visit.patientId).get();
+    if (!clinicRef || !data.patientId) continue;
+    const patientDoc = await clinicRef.collection("patients").doc(data.patientId).get();
     const patient = patientDoc.data();
     if (!patient?.email || !patient.emailNotificationsEnabled) continue;
     const clinic = await clinicSettingsFor(clinicRef, clinicNames);
@@ -170,7 +178,7 @@ async function sendAppointmentReminders(clinicNames) {
       to: patient.email,
       message: appointmentMessage(patient, clinic.clinicName, appointmentDate),
       clinic,
-      metadata: { type: "appointment", clinicId: clinicRef.id, patientId: patientDoc.id, visitId: doc.id }
+      metadata: { type: "appointment", clinicId: clinicRef.id, patientId: patientDoc.id, [isAppointment ? "appointmentId" : "visitId"]: doc.id }
     })) sent += 1;
   }
   return sent;
