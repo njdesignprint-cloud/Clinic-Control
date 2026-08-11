@@ -111,7 +111,7 @@
           <span>◆</span> Consultas
         </button>
         <button class="nav-item" data-page="billing">
-          <span>◌</span> Cobros
+          <span>◌</span> Pagos
         </button>
         <button class="nav-item" data-page="invoices">
           <span>▤</span> Facturas
@@ -323,12 +323,25 @@
       <section class="page" id="billing">
         <div class="section-top">
           <div>
-            <h2>Cobros y balances</h2>
-            <p>Seguimiento de deudas por paciente y consulta.</p>
+            <h2>Pagos y contabilidad</h2>
+            <p>Control unificado de pagos de pacientes y reclamaciones de seguros.</p>
           </div>
         </div>
 
-        <div id="billingCards" class="billing-grid"></div>
+        <div id="billingSummary" class="kpi-grid billing-summary"></div>
+        <div class="finance-tabs" role="tablist" aria-label="Tipo de pago">
+          <button class="finance-tab active" data-billing-tab="all">Todos</button>
+          <button class="finance-tab" data-billing-tab="cash">Cash</button>
+          <button class="finance-tab" data-billing-tab="insurance">Seguros</button>
+          <button class="finance-tab" data-billing-tab="pending">Balances pendientes</button>
+        </div>
+        <div class="panel-toolbar finance-toolbar">
+          <input id="billingSearch" type="search" placeholder="Buscar paciente, servicio, factura o seguro..." />
+          <select id="billingStatusFilter" aria-label="Filtrar por estado">
+            <option value="">Todos los estados</option><option value="paid">Pagado</option><option value="partial">Pago parcial</option><option value="pending">Pendiente</option><option value="rejected">Seguro rechazado</option>
+          </select>
+        </div>
+        <div class="data-card"><table><thead><tr><th>Fecha / Factura</th><th>Paciente</th><th>Servicios</th><th>Tipo</th><th>Facturado</th><th>Paciente</th><th>Seguro</th><th>Balance</th><th>Estado</th><th></th></tr></thead><tbody id="billingTable"></tbody></table></div>
       </section>
 
       <section class="page" id="invoices">
@@ -588,16 +601,25 @@
           <small class="field-error" id="visitLineItemsError"></small>
         </div>
 
-        <div class="form-section-title section-spaced"><span>3</span><div><strong>Facturación</strong><small>Total calculado y estado del pago</small></div></div>
+        <div class="form-section-title section-spaced"><span>3</span><div><strong>Facturación</strong><small>Distribuye el cobro entre paciente y seguro</small></div></div>
         <div class="form-grid">
         <label class="field-group required"><span class="field-label">Total <b>*</b></span>
           <div class="input-prefix"><span>$</span><input id="visitTotal" type="number" step="0.01" min="0" placeholder="0.00" readonly /></div>
           <small class="field-hint">Se calcula sumando los servicios</small>
         </label>
-        <label class="field-group required"><span class="field-label">Pagado <b>*</b></span>
+        <label class="field-group required"><span class="field-label">Tipo de pago <b>*</b></span>
+          <select id="visitPaymentType"><option value="cash">Cash / paciente</option><option value="insurance">Seguro</option></select>
+        </label>
+        <label class="field-group required"><span class="field-label">Pagado por paciente <b>*</b></span>
           <div class="input-prefix"><span>$</span><input id="visitPaid" type="number" step="0.01" min="0" placeholder="0.00" required /></div>
           <small class="field-error" id="visitPaidError"></small>
         </label>
+        <div id="visitInsuranceBilling" class="insurance-billing-fields full hidden">
+          <label class="field-group"><span class="field-label">Pagado por seguro</span><div class="input-prefix"><span>$</span><input id="visitInsurancePaid" type="number" step="0.01" min="0" placeholder="0.00" /></div></label>
+          <label class="field-group"><span class="field-label">Estado de reclamación</span><select id="visitClaimStatus"><option value="draft">Preparada</option><option value="submitted">Enviada</option><option value="processing">En proceso</option><option value="paid">Pagada</option><option value="partial">Pago parcial</option><option value="rejected">Rechazada</option></select></label>
+          <label class="field-group"><span class="field-label">Número de reclamación</span><input id="visitClaimNumber" type="text" placeholder="Ej. CLM-20481" /></label>
+          <label class="field-group"><span class="field-label">Copago esperado</span><div class="input-prefix"><span>$</span><input id="visitCopay" type="number" step="0.01" min="0" placeholder="0.00" /></div></label>
+        </div>
         <label class="field-group required full"><span class="field-label">Motivo <b>*</b></span>
           <textarea id="visitReason" rows="3" placeholder="Describe brevemente el motivo de la consulta" required></textarea>
           <small class="field-error" id="visitReasonError"></small>

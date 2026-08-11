@@ -1024,6 +1024,47 @@ button {
   background: white;
 }
 
+.billing-summary {
+  margin-bottom: 18px;
+}
+
+.finance-tabs {
+  display: flex;
+  gap: 6px;
+  padding: 5px;
+  margin-bottom: 14px;
+  width: max-content;
+  max-width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 15px;
+  background: #f1f5f9;
+}
+
+.finance-tab {
+  border: 0;
+  border-radius: 11px;
+  padding: 10px 15px;
+  color: var(--muted);
+  background: transparent;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.finance-tab.active {
+  color: var(--primary);
+  background: white;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, .08);
+}
+
+.finance-toolbar select {
+  min-width: 210px;
+  border: 1px solid var(--line);
+  border-radius: 15px;
+  padding: 0 14px;
+  background: white;
+}
+
 .panel-toolbar input:focus,
 .modal input:focus,
 .modal textarea:focus,
@@ -1474,13 +1515,39 @@ td small {
 
 .service-line {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 180px 38px;
+  grid-template-columns: minmax(220px, 1fr) 100px 160px 110px 38px;
   gap: 10px;
   align-items: end;
   padding: 14px;
   border: 1px solid #dbe5eb;
   border-radius: 15px;
   background: #f8fafc;
+}
+
+.service-line-total {
+  display: grid;
+  gap: 8px;
+  min-height: 50px;
+  align-content: center;
+}
+
+.service-line-total small {
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.insurance-billing-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid #bfdbfe;
+  border-radius: 15px;
+  background: #f8fbff;
+}
+
+.insurance-billing-fields.hidden {
+  display: none;
 }
 
 .service-line .service-remove {
@@ -1893,6 +1960,14 @@ dialog::backdrop {
 
   .service-line .field-group:first-child {
     grid-column: 1 / -1;
+  }
+
+  .service-line-total {
+    grid-column: 1 / 2;
+  }
+
+  .insurance-billing-fields {
+    grid-template-columns: 1fr;
   }
 
   table {

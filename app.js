@@ -5,6 +5,7 @@ let unsubscribeSettings = null;
 let unsubscribePatients = null;
 let unsubscribeVisits = null;
 let activeInvoiceId = null;
+let activeBillingTab = "all";
 
 function uid() {
   if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
@@ -326,7 +327,12 @@ function invoiceSettings() {
 }
 
 function visitItems(visit) {
-  if (Array.isArray(visit?.lineItems) && visit.lineItems.length) return visit.lineItems;
+  if (Array.isArray(visit?.lineItems) && visit.lineItems.length) return visit.lineItems.map((item) => ({
+    ...item,
+    quantity: Number(item.quantity || 1),
+    unitPrice: Number(item.unitPrice ?? item.price ?? 0),
+    price: Number(item.price ?? (Number(item.quantity || 1) * Number(item.unitPrice || 0)))
+  }));
   if (Number(visit?.total || 0) > 0) {
     return [{ id: uid(), description: visit.reason || "Consulta", price: Number(visit.total) }];
   }
@@ -392,13 +398,32 @@ function patient(id) {
 }
 
 function balance(visit) {
-  return Math.max(0, Number(visit.total || 0) - Number(visit.paid || 0));
+  return Math.max(0, Number(visit.total || 0) - totalPaid(visit));
+}
+
+function totalPaid(visit) {
+  if (visit.patientPaid !== undefined || visit.insurancePaid !== undefined) {
+    return Number(visit.patientPaid || 0) + Number(visit.insurancePaid || 0);
+  }
+  return Number(visit.paid || 0);
+}
+
+function paymentType(visit) {
+  return visit.paymentType || (patient(visit.patientId)?.payerType === "insurance" ? "insurance" : "cash");
+}
+
+function financialStatus(visit) {
+  if (visit.claimStatus === "rejected") return { key: "rejected", label: "Rechazada", color: "red" };
+  const paid = totalPaid(visit);
+  if (balance(visit) <= 0) return { key: "paid", label: "Pagado", color: "green" };
+  if (paid > 0) return { key: "partial", label: "Pago parcial", color: "blue" };
+  return { key: "pending", label: "Pendiente", color: "red" };
 }
 
 function totals(visits = state.visits) {
   return visits.reduce((acc, visit) => {
     acc.billed += Number(visit.total || 0);
-    acc.paid += Number(visit.paid || 0);
+    acc.paid += totalPaid(visit);
     acc.debt += balance(visit);
     return acc;
   }, { billed: 0, paid: 0, debt: 0 });
@@ -419,7 +444,7 @@ function showPage(pageId) {
     dashboard: "Dashboard",
     patients: "Pacientes",
     visits: "Consultas",
-    billing: "Cobros",
+    billing: "Pagos",
     invoices: "Facturas",
     reports: "Reportes",
     settings: "Ajustes"
@@ -594,7 +619,7 @@ function renderVisits() {
         <td><span class="badge ${visit.type === "Teleconsulta" ? "blue" : "green"}">${visit.type}</span><br><small>${visit.status || "Completada"}</small></td>
         <td>${visit.reason}</td>
         <td>${money(visit.total)}</td>
-        <td>${money(visit.paid)}</td>
+        <td>${money(totalPaid(visit))}</td>
         <td><span class="badge ${due > 0 ? "red" : "green"}">${money(due)}</span></td>
         <td>
           <div class="row-actions">
@@ -608,34 +633,40 @@ function renderVisits() {
 }
 
 function renderBilling() {
-  const rows = debtRows();
-  const box = $("#billingCards");
+  const summary = state.visits.reduce((acc, visit) => {
+    acc.billed += Number(visit.total || 0);
+    acc.patient += visit.patientPaid !== undefined ? Number(visit.patientPaid || 0) : (paymentType(visit) === "cash" ? Number(visit.paid || 0) : 0);
+    acc.insurance += Number(visit.insurancePaid || 0);
+    acc.pending += balance(visit);
+    return acc;
+  }, { billed: 0, patient: 0, insurance: 0, pending: 0 });
+  $("#billingSummary").innerHTML = `
+    <article class="kpi-card"><span class="kpi-label">Total facturado</span><strong>${money(summary.billed)}</strong><small>Todas las consultas</small></article>
+    <article class="kpi-card"><span class="kpi-label">Pagado por pacientes</span><strong>${money(summary.patient)}</strong><small>Cash, tarjeta y copagos</small></article>
+    <article class="kpi-card"><span class="kpi-label">Pagado por seguros</span><strong>${money(summary.insurance)}</strong><small>Reclamaciones procesadas</small></article>
+    <article class="kpi-card accent"><span class="kpi-label">Balance pendiente</span><strong>${money(summary.pending)}</strong><small>Por cobrar</small></article>`;
 
-  if (!rows.length) {
-    box.innerHTML = `<div class="empty">No hay deudas pendientes.</div>`;
-    return;
-  }
+  const query = ($("#billingSearch")?.value || "").toLowerCase().trim();
+  const statusFilter = $("#billingStatusFilter")?.value || "";
+  const rows = [...state.visits].filter((visit) => {
+    const p = patient(visit.patientId);
+    const type = paymentType(visit);
+    const status = financialStatus(visit);
+    if (activeBillingTab === "cash" && type !== "cash") return false;
+    if (activeBillingTab === "insurance" && type !== "insurance") return false;
+    if (activeBillingTab === "pending" && balance(visit) <= 0) return false;
+    if (statusFilter && status.key !== statusFilter) return false;
+    const searchable = `${p?.name || ""} ${p?.insuranceCompany || ""} ${invoiceNumber(visit)} ${visitItems(visit).map((item) => item.description).join(" ")}`.toLowerCase();
+    return searchable.includes(query);
+  }).sort((a, b) => new Date(b.date) - new Date(a.date));
 
-  box.innerHTML = rows.map((row) => `
-    <article class="billing-card">
-      <div class="top">
-        <div>
-          <h3>${row.patient.name}</h3>
-          <p>${row.patient.phone || "Sin teléfono"} · ${row.visits.length} consulta(s) pendiente(s)</p>
-        </div>
-        <strong class="balance">${money(row.debt)}</strong>
-      </div>
-
-      <div class="billing-details">
-        ${row.visits.map((visit) => `
-          <div>
-            <span>${fmtDate(visit.date)}</span>
-            <strong>${money(balance(visit))}</strong>
-          </div>
-        `).join("")}
-      </div>
-    </article>
-  `).join("");
+  $("#billingTable").innerHTML = rows.length ? rows.map((visit) => {
+    const p = patient(visit.patientId);
+    const type = paymentType(visit);
+    const status = financialStatus(visit);
+    const patientPaid = visit.patientPaid !== undefined ? Number(visit.patientPaid || 0) : (type === "cash" ? Number(visit.paid || 0) : 0);
+    return `<tr><td>${fmtDate(visit.date)}<br><small>${escapeHtml(invoiceNumber(visit))}</small></td><td><strong>${escapeHtml(p?.name || "Paciente eliminado")}</strong><br><small>${escapeHtml(type === "insurance" ? (p?.insuranceCompany || "Seguro no indicado") : "Pago propio")}</small></td><td>${visitItems(visit).length} servicio(s)<br><small>${escapeHtml(visitItems(visit).map((item) => item.description).join(", "))}</small></td><td><span class="badge ${type === "insurance" ? "blue" : "green"}">${type === "insurance" ? "Seguro" : "Cash"}</span></td><td>${money(visit.total)}</td><td>${money(patientPaid)}</td><td>${money(visit.insurancePaid)}</td><td><strong>${money(balance(visit))}</strong></td><td><span class="badge ${status.color}">${status.label}</span></td><td><button class="btn light invoice-view" onclick="editVisit('${visit.id}')">Gestionar</button></td></tr>`;
+  }).join("") : `<tr><td class="empty" colspan="10">No hay pagos que coincidan con los filtros.</td></tr>`;
 }
 
 function renderInvoices() {
@@ -663,7 +694,7 @@ function renderInvoices() {
         <td><strong>${escapeHtml(p?.name || "Paciente eliminado")}</strong></td>
         <td>${items.length} concepto(s)<br><small>${escapeHtml(items.map((item) => item.description).join(", ") || "Sin detalle")}</small></td>
         <td>${money(visit.total)}</td>
-        <td>${money(visit.paid)}</td>
+        <td>${money(totalPaid(visit))}</td>
         <td><span class="badge ${due > 0 ? "red" : "green"}">${money(due)}</span></td>
         <td><button class="btn light invoice-view" onclick="openInvoice('${visit.id}')">Ver factura</button></td>
       </tr>
@@ -708,12 +739,12 @@ function openInvoice(id) {
         <div><small>Fecha</small><strong>${fmtDate(visit.date)}</strong>${design.showDoctor ? `<span>${escapeHtml(visit.doctor || "Sin doctor asignado")}</span>` : ""}${design.showInsurance ? `<span>${escapeHtml(payerLabel(p))}</span>` : ""}</div>
       </div>
       <table class="invoice-items">
-        <thead><tr><th>Descripción del servicio</th><th>Precio</th></tr></thead>
-        <tbody>${items.map((item) => `<tr><td>${escapeHtml(item.description)}</td><td>${money(item.price)}</td></tr>`).join("")}</tbody>
+        <thead><tr><th>Descripción del servicio</th><th>Cantidad</th><th>Precio</th><th>Total</th></tr></thead>
+        <tbody>${items.map((item) => `<tr><td>${escapeHtml(item.description)}</td><td>${item.quantity}</td><td>${money(item.unitPrice)}</td><td>${money(item.price)}</td></tr>`).join("")}</tbody>
       </table>
       <div class="invoice-summary">
         <div><span>Total</span><strong>${money(visit.total)}</strong></div>
-        <div><span>Pagado</span><strong>${money(visit.paid)}</strong></div>
+        <div><span>Pagado</span><strong>${money(totalPaid(visit))}</strong></div>
         <div class="invoice-balance"><span>Balance</span><strong>${money(due)}</strong></div>
       </div>
       ${visit.notes ? `<div class="invoice-notes"><strong>Notas</strong><p>${escapeHtml(visit.notes)}</p></div>` : ""}
@@ -785,18 +816,22 @@ function downloadInvoicePdf(id = activeInvoiceId) {
   pdf.rect(left, y - 14, right - left, 24, "F");
   pdf.setFont("helvetica", "bold");
   pdf.text("Descripción del servicio", left + 8, y);
-  pdf.text("Precio", right - 8, y, { align: "right" });
+  pdf.text("Cant.", 390, y, { align: "right" });
+  pdf.text("Precio", 470, y, { align: "right" });
+  pdf.text("Total", right - 8, y, { align: "right" });
   y += 26;
 
   pdf.setFont("helvetica", "normal");
   items.forEach((item) => {
-    const lines = pdf.splitTextToSize(item.description || "Servicio", 390);
+    const lines = pdf.splitTextToSize(item.description || "Servicio", 280);
     const rowHeight = Math.max(22, lines.length * 13 + 8);
     if (y + rowHeight > 700) {
       pdf.addPage();
       y = 52;
     }
     pdf.text(lines, left + 8, y);
+    pdf.text(String(item.quantity || 1), 390, y, { align: "right" });
+    pdf.text(money(item.unitPrice), 470, y, { align: "right" });
     pdf.text(money(item.price), right - 8, y, { align: "right" });
     y += rowHeight;
     pdf.setDrawColor(226, 232, 240);
@@ -807,7 +842,7 @@ function downloadInvoicePdf(id = activeInvoiceId) {
   pdf.setFont("helvetica", "bold");
   pdf.text(`Total: ${money(visit.total)}`, right, y, { align: "right" });
   y += 18;
-  pdf.text(`Pagado: ${money(visit.paid)}`, right, y, { align: "right" });
+  pdf.text(`Pagado: ${money(totalPaid(visit))}`, right, y, { align: "right" });
   y += 18;
   pdf.setTextColor(balance(visit) > 0 ? 185 : 4, balance(visit) > 0 ? 28 : 120, balance(visit) > 0 ? 28 : 87);
   pdf.text(`Balance: ${money(balance(visit))}`, right, y, { align: "right" });
@@ -870,7 +905,7 @@ function renderReports() {
               <td>${visit.type}</td>
               <td>${visit.reason}</td>
               <td>${money(visit.total)}</td>
-              <td>${money(visit.paid)}</td>
+              <td>${money(totalPaid(visit))}</td>
             </tr>
           `).join("") : `<tr><td class="empty" colspan="6">No hay consultas registradas hoy.</td></tr>`}
         </tbody>
@@ -964,7 +999,14 @@ function openVisitDialog(visit = null) {
   $("#visitStatus").value = visit?.status || (visit ? "Completada" : "Programada");
   $("#visitReminderEnabled").checked = visit ? Boolean(visit.reminderEnabled) : true;
   renderVisitLineItems(visitItems(visit));
-  $("#visitPaid").value = visit?.paid ?? 0;
+  const inferredType = visit ? paymentType(visit) : (patient($("#visitPatient").value)?.payerType === "insurance" ? "insurance" : "cash");
+  $("#visitPaymentType").value = inferredType;
+  $("#visitPaid").value = visit?.patientPaid ?? (inferredType === "cash" ? (visit?.paid ?? 0) : 0);
+  $("#visitInsurancePaid").value = visit?.insurancePaid ?? (inferredType === "insurance" ? (visit?.paid ?? 0) : 0);
+  $("#visitClaimStatus").value = visit?.claimStatus || "draft";
+  $("#visitClaimNumber").value = visit?.claimNumber || "";
+  $("#visitCopay").value = visit?.copay ?? 0;
+  toggleVisitInsuranceFields();
   $("#visitReason").value = visit?.reason || "";
   $("#visitNotes").value = visit?.notes || "";
   clearFormErrors($("#visitForm"));
@@ -980,9 +1022,11 @@ function renderVisitLineItems(items = []) {
       <label class="field-group"><span class="field-label">Servicio o procedimiento</span>
         <input class="service-description" type="text" value="${escapeHtml(item.description)}" placeholder="Ej. Consulta, tratamiento o producto" />
       </label>
-      <label class="field-group"><span class="field-label">Precio</span>
-        <div class="input-prefix"><span>$</span><input class="service-price" type="number" step="0.01" min="0" value="${item.price ?? ""}" placeholder="0.00" /></div>
+      <label class="field-group service-quantity-field"><span class="field-label">Cantidad</span><input class="service-quantity" type="number" step="1" min="1" value="${item.quantity || 1}" /></label>
+      <label class="field-group"><span class="field-label">Precio unitario</span>
+        <div class="input-prefix"><span>$</span><input class="service-price" type="number" step="0.01" min="0" value="${item.unitPrice ?? item.price ?? ""}" placeholder="0.00" /></div>
       </label>
+      <div class="service-line-total"><small>Total</small><strong>${money(item.price)}</strong></div>
       <button type="button" class="icon-btn service-remove" title="Eliminar servicio">×</button>
     </div>`).join("");
 
@@ -994,6 +1038,7 @@ function renderVisitLineItems(items = []) {
     if (box.children.length === 1) {
       box.querySelector(".service-description").value = "";
       box.querySelector(".service-price").value = "";
+      box.querySelector(".service-quantity").value = "1";
     } else {
       button.closest(".service-line").remove();
     }
@@ -1007,13 +1052,24 @@ function collectVisitLineItems() {
   return [...$("#visitLineItems").querySelectorAll(".service-line")].map((row) => ({
     id: row.dataset.lineId || uid(),
     description: row.querySelector(".service-description").value.trim(),
-    price: Number(row.querySelector(".service-price").value || 0)
+    quantity: Math.max(1, Number(row.querySelector(".service-quantity").value || 1)),
+    unitPrice: Number(row.querySelector(".service-price").value || 0),
+    price: Math.max(1, Number(row.querySelector(".service-quantity").value || 1)) * Number(row.querySelector(".service-price").value || 0)
   }));
 }
 
 function updateVisitTotal() {
   const total = collectVisitLineItems().reduce((sum, item) => sum + item.price, 0);
   $("#visitTotal").value = total.toFixed(2);
+  [...$("#visitLineItems").querySelectorAll(".service-line")].forEach((row) => {
+    const quantity = Math.max(1, Number(row.querySelector(".service-quantity").value || 1));
+    const price = Number(row.querySelector(".service-price").value || 0);
+    row.querySelector(".service-line-total strong").textContent = money(quantity * price);
+  });
+}
+
+function toggleVisitInsuranceFields() {
+  $("#visitInsuranceBilling").classList.toggle("hidden", $("#visitPaymentType").value !== "insurance");
 }
 
 function setFieldError(input, errorElement, message = "") {
@@ -1079,16 +1135,17 @@ function validatePatientForm() {
 
 function validateVisitForm() {
   const total = Number($("#visitTotal").value || 0);
-  const paid = Number($("#visitPaid").value || 0);
+  const patientPaid = Number($("#visitPaid").value || 0);
+  const insurancePaid = $("#visitPaymentType").value === "insurance" ? Number($("#visitInsurancePaid").value || 0) : 0;
   const reason = $("#visitReason");
   const items = collectVisitLineItems();
   const itemRows = [...$("#visitLineItems").querySelectorAll(".service-line")];
   const invalidItems = items.some((item, index) => {
     const rawPrice = itemRows[index]?.querySelector(".service-price").value;
-    return !item.description || rawPrice === "" || !Number.isFinite(item.price) || item.price < 0;
+    return !item.description || rawPrice === "" || !Number.isFinite(item.price) || item.price < 0 || item.quantity < 1;
   });
   const itemsMessage = invalidItems ? "Completa la descripción y el precio de cada servicio." : "";
-  const paidMessage = paid > total ? "El pago no puede ser mayor que el total." : "";
+  const paidMessage = patientPaid + insurancePaid > total ? "Los pagos no pueden ser mayores que el total." : "";
   const reasonMessage = reason.value.trim().length < 3 ? "Describe brevemente el motivo de la consulta." : "";
 
   setFieldError($("#visitPaid"), $("#visitPaidError"), paidMessage);
@@ -1169,6 +1226,13 @@ $("#patientSearch").addEventListener("input", renderPatients);
 $("#visitSearch").addEventListener("input", renderVisits);
 $("#invoiceSearch").addEventListener("input", renderInvoices);
 $("#invoicePatientFilter").addEventListener("change", renderInvoices);
+$("#billingSearch").addEventListener("input", renderBilling);
+$("#billingStatusFilter").addEventListener("change", renderBilling);
+$$('[data-billing-tab]').forEach((button) => button.addEventListener("click", () => {
+  activeBillingTab = button.dataset.billingTab;
+  $$('[data-billing-tab]').forEach((tab) => tab.classList.toggle("active", tab === button));
+  renderBilling();
+}));
 $("#downloadInvoiceBtn").addEventListener("click", () => downloadInvoicePdf());
 
 $("#globalSearch").addEventListener("input", (event) => {
@@ -1198,6 +1262,14 @@ $("#patientBirthDate").addEventListener("change", () => {
   validatePatientForm();
 });
 $("#visitPaid").addEventListener("input", validateVisitForm);
+$("#visitInsurancePaid").addEventListener("input", validateVisitForm);
+$("#visitPaymentType").addEventListener("change", () => { toggleVisitInsuranceFields(); validateVisitForm(); });
+$("#visitPatient").addEventListener("change", () => {
+  if (!$("#visitId").value) {
+    $("#visitPaymentType").value = patient($("#visitPatient").value)?.payerType === "insurance" ? "insurance" : "cash";
+    toggleVisitInsuranceFields();
+  }
+});
 $("#visitTotal").addEventListener("input", validateVisitForm);
 $("#visitReason").addEventListener("input", validateVisitForm);
 $("#addVisitLineItem").addEventListener("click", () => {
@@ -1246,7 +1318,8 @@ $("#visitForm").addEventListener("submit", async (event) => {
   event.preventDefault();
 
   const total = Number($("#visitTotal").value || 0);
-  const paid = Number($("#visitPaid").value || 0);
+  const patientPaid = Number($("#visitPaid").value || 0);
+  const insurancePaid = $("#visitPaymentType").value === "insurance" ? Number($("#visitInsurancePaid").value || 0) : 0;
 
   if (!validateVisitForm()) return;
 
@@ -1267,7 +1340,13 @@ $("#visitForm").addEventListener("submit", async (event) => {
     lineItems,
     invoiceNumber: existingVisit?.invoiceNumber || `${state.settings.invoicePrefix || "FAC"}-${recordId.slice(0, 8).toUpperCase()}`,
     total,
-    paid
+    paid: patientPaid + insurancePaid,
+    patientPaid,
+    insurancePaid,
+    paymentType: $("#visitPaymentType").value,
+    claimStatus: $("#visitPaymentType").value === "insurance" ? $("#visitClaimStatus").value : "",
+    claimNumber: $("#visitPaymentType").value === "insurance" ? $("#visitClaimNumber").value.trim() : "",
+    copay: $("#visitPaymentType").value === "insurance" ? Number($("#visitCopay").value || 0) : 0
   };
 
   try {
