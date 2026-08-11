@@ -1090,13 +1090,21 @@ button {
 .billing-print-sheet header h2, .billing-print-sheet header p { margin: 0; }
 .billing-print-sheet header p, .billing-print-sheet header span { display: block; margin-top: 5px; color: var(--muted); font-size: 11px; }
 .billing-print-sheet header > div:last-child { text-align: right; }
+.billing-print-brand { display: flex; align-items: center; gap: 12px; }
+.billing-print-brand img { width: 56px; height: 42px; object-fit: contain; }
 .billing-print-context { display: flex; justify-content: space-between; gap: 15px; margin: 15px 0; }
 .billing-print-context span { color: var(--muted); font-size: 11px; }
 .billing-print-summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 16px; }
 .billing-print-summary > div { display: grid; gap: 3px; padding: 10px; border: 1px solid var(--line); border-radius: 10px; background: #f8fafc; }
 .billing-print-summary span, .billing-print-summary small { color: var(--muted); font-size: 10px; }
 .billing-print-summary strong { font-size: 18px; }
-.billing-print-sheet table { width: 100%; font-size: 10px; }
+.billing-print-sheet table { width: 100%; table-layout: fixed; font-size: 10px; }
+.billing-print-sheet .print-date { width: 13%; }
+.billing-print-sheet .print-patient { width: 33%; }
+.billing-print-sheet .print-type { width: 8%; }
+.billing-print-sheet .print-amount { width: 11.5%; }
+.billing-print-sheet th, .billing-print-sheet td { overflow-wrap: anywhere; vertical-align: top; }
+.billing-print-sheet th:nth-child(n+4), .billing-print-sheet td:nth-child(n+4) { text-align: right; white-space: nowrap; }
 .billing-print-sheet td small { display: block; margin-top: 3px; }
 .billing-print-sheet footer { margin-top: 14px; color: var(--muted); font-size: 10px; text-align: right; }
 

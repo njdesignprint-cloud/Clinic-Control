@@ -917,13 +917,28 @@ function billingReportHtml() {
   const totals = billingTotals(currentBillingRows);
   const totalPending = totals.patientPending + totals.insurancePending;
   const filters = [$("#billingDateFrom").value ? `Desde ${$("#billingDateFrom").value}` : "", $("#billingDateTo").value ? `Hasta ${$("#billingDateTo").value}` : "", $("#billingInsuranceFilter").value, $("#billingSearch").value].filter(Boolean).join(" · ");
-  return `<article class="billing-print-sheet"><header><div><h2>${escapeHtml(state.settings.clinicName || "Clinic Control")}</h2><p>${escapeHtml([state.settings.clinicAddress, state.settings.clinicPhone, state.settings.clinicEmail].filter(Boolean).join(" · "))}</p></div><div><strong>REPORTE DE PAGOS</strong><span>${new Date().toLocaleDateString("es-US")}</span></div></header><div class="billing-print-context"><strong>${billingReportTitle()}</strong><span>${escapeHtml(filters || "Sin filtros adicionales")}</span></div><div class="billing-print-summary"><div><span>Total facturado</span><strong>${money(totals.billed)}</strong></div><div><span>Facturado Cash</span><strong>${money(totals.cashBilled)}</strong></div><div><span>Cobrado pacientes</span><strong>${money(totals.patientPaid)}</strong></div><div><span>Facturado seguros</span><strong>${money(totals.insuranceBilled)}</strong></div><div><span>Cobrado seguros</span><strong>${money(totals.insurancePaid)}</strong></div><div><span>Balance total</span><strong>${money(totalPending)}</strong><small>Pacientes ${money(totals.patientPending)} · Seguros ${money(totals.insurancePending)}</small></div></div><table><thead><tr><th>Fecha / Factura</th><th>Paciente / Servicio</th><th>Tipo</th><th>Facturado</th><th>Paciente</th><th>Seguro</th><th>Balance</th></tr></thead><tbody>${currentBillingRows.map((visit) => { const p = patient(visit.patientId); const value = billingVisitAmounts(visit); return `<tr><td>${fmtDate(visit.date)}<small>${escapeHtml(invoiceNumber(visit))}</small></td><td><strong>${escapeHtml(p?.name || "Paciente eliminado")}</strong><small>${escapeHtml(visitItems(visit).map((item) => item.description).join(", ") || visit.reason || "Consulta")}</small></td><td>${value.type === "insurance" ? "Seguro" : "Cash"}</td><td>${money(value.total)}</td><td>${money(value.patientPaid)}</td><td>${money(value.insurancePaid)}</td><td>${money(value.patientPending + value.insurancePending)}</td></tr>`; }).join("") || `<tr><td colspan="7">No hay información para los filtros seleccionados.</td></tr>`}</tbody></table><footer>${currentBillingRows.length} registro(s) · Generado el ${new Date().toLocaleString("es-US")}</footer></article>`;
+  return `<article class="billing-print-sheet"><header><div class="billing-print-brand">${state.settings.clinicLogo ? `<img src="${state.settings.clinicLogo}" alt="Logo de la clínica" />` : ""}<div><h2>${escapeHtml(state.settings.clinicName || "Clinic Control")}</h2><p>${escapeHtml([state.settings.clinicAddress, state.settings.clinicPhone, state.settings.clinicEmail].filter(Boolean).join(" · "))}</p></div></div><div><strong>REPORTE DE PAGOS</strong><span>${new Date().toLocaleDateString("es-US")}</span></div></header><div class="billing-print-context"><strong>${billingReportTitle()}</strong><span>${escapeHtml(filters || "Sin filtros adicionales")}</span></div><div class="billing-print-summary"><div><span>Total facturado</span><strong>${money(totals.billed)}</strong></div><div><span>Facturado Cash</span><strong>${money(totals.cashBilled)}</strong></div><div><span>Cobrado pacientes</span><strong>${money(totals.patientPaid)}</strong></div><div><span>Facturado seguros</span><strong>${money(totals.insuranceBilled)}</strong></div><div><span>Cobrado seguros</span><strong>${money(totals.insurancePaid)}</strong></div><div><span>Balance total</span><strong>${money(totalPending)}</strong><small>Pacientes ${money(totals.patientPending)} · Seguros ${money(totals.insurancePending)}</small></div></div><table><colgroup><col class="print-date" /><col class="print-patient" /><col class="print-type" /><col span="4" class="print-amount" /></colgroup><thead><tr><th>Fecha / Factura</th><th>Paciente / Servicio</th><th>Tipo</th><th>Facturado</th><th>Paciente</th><th>Seguro</th><th>Balance</th></tr></thead><tbody>${currentBillingRows.map((visit) => { const p = patient(visit.patientId); const value = billingVisitAmounts(visit); return `<tr><td>${new Date(visit.date).toLocaleDateString("es-US")}<small>${escapeHtml(invoiceNumber(visit))}</small></td><td><strong>${escapeHtml(p?.name || "Paciente eliminado")}</strong><small>${escapeHtml(visitItems(visit).map((item) => item.description).join(", ") || visit.reason || "Consulta")}</small></td><td>${value.type === "insurance" ? "Seguro" : "Cash"}</td><td>${money(value.total)}</td><td>${money(value.patientPaid)}</td><td>${money(value.insurancePaid)}</td><td>${money(value.patientPending + value.insurancePending)}</td></tr>`; }).join("") || `<tr><td colspan="7">No hay información para los filtros seleccionados.</td></tr>`}</tbody></table><footer>${currentBillingRows.length} registro(s) · Generado el ${new Date().toLocaleString("es-US")}</footer></article>`;
 }
 
 function printBillingReport() {
   $("#billingReportPrint").innerHTML = billingReportHtml();
   $("#billingReportDialog").showModal();
   setTimeout(() => window.print(), 100);
+}
+
+function addClinicLogoToPdf(pdf, x, y, maxWidth = 52, maxHeight = 36) {
+  if (!state.settings.clinicLogo) return 0;
+  try {
+    const properties = pdf.getImageProperties(state.settings.clinicLogo);
+    const ratio = Math.min(maxWidth / properties.width, maxHeight / properties.height);
+    const width = properties.width * ratio;
+    const height = properties.height * ratio;
+    pdf.addImage(state.settings.clinicLogo, properties.fileType || undefined, x, y, width, height, undefined, "FAST");
+    return width + 10;
+  } catch (error) {
+    console.warn("El logo no pudo agregarse al PDF.", error);
+    return 0;
+  }
 }
 
 function downloadBillingPdf() {
@@ -933,23 +948,69 @@ function downloadBillingPdf() {
   const totals = billingTotals(currentBillingRows);
   const margin = 38;
   const pageWidth = 792;
-  let y = 42;
-  pdf.setTextColor(15, 118, 110); pdf.setFont("helvetica", "bold"); pdf.setFontSize(18); pdf.text(state.settings.clinicName || "Clinic Control", margin, y);
-  pdf.setTextColor(23, 32, 51); pdf.setFontSize(15); pdf.text("REPORTE DE PAGOS", pageWidth - margin, y, { align: "right" });
-  y += 20; pdf.setFont("helvetica", "normal"); pdf.setFontSize(9); pdf.setTextColor(80, 95, 115); pdf.text(`${billingReportTitle()} · ${new Date().toLocaleDateString("es-US")}`, margin, y);
-  y += 25; pdf.setFont("helvetica", "bold"); pdf.setFontSize(10);
-  const summaryLines = [`Total facturado: ${money(totals.billed)}`, `Cash: ${money(totals.cashBilled)} / cobrado ${money(totals.patientPaid)}`, `Seguros: ${money(totals.insuranceBilled)} / cobrado ${money(totals.insurancePaid)}`, `Pendiente pacientes: ${money(totals.patientPending)}`, `Pendiente seguros: ${money(totals.insurancePending)}`];
-  pdf.text(summaryLines.join("    "), margin, y, { maxWidth: pageWidth - margin * 2 }); y += 30;
-  const columns = [margin, 112, 305, 385, 468, 555, 642, 750];
-  const headers = ["Fecha / factura", "Paciente / servicio", "Tipo", "Facturado", "Paciente", "Seguro", "Balance"];
-  const drawHeader = () => { pdf.setFillColor(226, 232, 240); pdf.rect(margin, y - 14, pageWidth - margin * 2, 22, "F"); pdf.setTextColor(23, 32, 51); pdf.setFont("helvetica", "bold"); pdf.setFontSize(8); headers.forEach((header, index) => pdf.text(header, columns[index] + 3, y)); y += 18; };
-  drawHeader(); pdf.setFont("helvetica", "normal");
-  currentBillingRows.forEach((visit) => {
-    const p = patient(visit.patientId); const value = billingVisitAmounts(visit); const service = visitItems(visit).map((item) => item.description).join(", ") || visit.reason || "Consulta";
-    const patientLines = pdf.splitTextToSize(`${p?.name || "Paciente"} · ${service}`, 185); const rowHeight = Math.max(22, patientLines.length * 9 + 6);
-    if (y + rowHeight > 570) { pdf.addPage(); y = 42; drawHeader(); }
-    pdf.setTextColor(23, 32, 51); pdf.setFontSize(7.5); pdf.text(`${fmtDate(visit.date)}\n${invoiceNumber(visit)}`, columns[0] + 3, y); pdf.text(patientLines, columns[1] + 3, y); pdf.text(value.type === "insurance" ? "Seguro" : "Cash", columns[2] + 3, y); pdf.text(money(value.total), columns[3] + 3, y); pdf.text(money(value.patientPaid), columns[4] + 3, y); pdf.text(money(value.insurancePaid), columns[5] + 3, y); pdf.text(money(value.patientPending + value.insurancePending), columns[6] + 3, y); y += rowHeight; pdf.setDrawColor(226, 232, 240); pdf.line(margin, y - 5, pageWidth - margin, y - 5);
+  const right = pageWidth - margin;
+  let y = 38;
+  const logoOffset = addClinicLogoToPdf(pdf, margin, 20, 54, 38);
+  pdf.setTextColor(15, 118, 110); pdf.setFont("helvetica", "bold"); pdf.setFontSize(18); pdf.text(state.settings.clinicName || "Clinic Control", margin + logoOffset, y);
+  pdf.setTextColor(23, 32, 51); pdf.setFontSize(15); pdf.text("REPORTE DE PAGOS", right, y, { align: "right" });
+  y += 18; pdf.setFont("helvetica", "normal"); pdf.setFontSize(8.5); pdf.setTextColor(80, 95, 115);
+  pdf.text(`${billingReportTitle()} - ${new Date().toLocaleDateString("es-US")}`, margin + logoOffset, y);
+  pdf.text([state.settings.clinicPhone, state.settings.clinicEmail].filter(Boolean).join(" - "), right, y, { align: "right" });
+  y += 20; pdf.setDrawColor(15, 118, 110); pdf.setLineWidth(1.5); pdf.line(margin, y, right, y); y += 13;
+  const cards = [
+    ["TOTAL FACTURADO", totals.billed, [23, 32, 51]],
+    ["CASH FACTURADO", totals.cashBilled, [5, 150, 105]],
+    ["CASH COBRADO", totals.patientPaid, [13, 148, 136]],
+    ["SEGUROS COBRADOS", totals.insurancePaid, [37, 99, 235]],
+    ["BALANCE TOTAL", totals.patientPending + totals.insurancePending, [234, 88, 12]]
+  ];
+  const cardGap = 8;
+  const cardWidth = (right - margin - cardGap * (cards.length - 1)) / cards.length;
+  cards.forEach(([label, amount, color], index) => {
+    const x = margin + index * (cardWidth + cardGap);
+    pdf.setFillColor(248, 250, 252); pdf.setDrawColor(...color); pdf.setLineWidth(1); pdf.roundedRect(x, y, cardWidth, 46, 4, 4, "FD");
+    pdf.setTextColor(80, 95, 115); pdf.setFont("helvetica", "bold"); pdf.setFontSize(6.5); pdf.text(label, x + 8, y + 13);
+    pdf.setTextColor(...color); pdf.setFontSize(13); pdf.text(money(amount), x + 8, y + 33);
   });
+  y += 60;
+  pdf.setTextColor(80, 95, 115); pdf.setFont("helvetica", "normal"); pdf.setFontSize(7.5);
+  pdf.text(`Balances separados: pacientes ${money(totals.patientPending)} - seguros ${money(totals.insurancePending)}`, margin, y); y += 16;
+  const columns = [
+    { label: "FECHA / FACTURA", x: margin, width: 92, align: "left" },
+    { label: "PACIENTE / SERVICIO", x: margin + 92, width: 236, align: "left" },
+    { label: "TIPO", x: margin + 328, width: 58, align: "left" },
+    { label: "FACTURADO", x: margin + 386, width: 82, align: "right" },
+    { label: "PACIENTE", x: margin + 468, width: 82, align: "right" },
+    { label: "SEGURO", x: margin + 550, width: 82, align: "right" },
+    { label: "BALANCE", x: margin + 632, width: 84, align: "right" }
+  ];
+  const drawHeader = () => {
+    pdf.setFillColor(226, 232, 240); pdf.rect(margin, y, right - margin, 24, "F");
+    pdf.setTextColor(23, 32, 51); pdf.setFont("helvetica", "bold"); pdf.setFontSize(7.2);
+    columns.forEach((column) => pdf.text(column.label, column.align === "right" ? column.x + column.width - 6 : column.x + 6, y + 15, { align: column.align }));
+    y += 24;
+  };
+  drawHeader();
+  currentBillingRows.forEach((visit) => {
+    const p = patient(visit.patientId); const value = billingVisitAmounts(visit);
+    const service = visitItems(visit).map((item) => item.description).join(", ") || visit.reason || "Consulta";
+    const patientNameLines = pdf.splitTextToSize(p?.name || "Paciente", columns[1].width - 12);
+    const serviceLines = pdf.splitTextToSize(service, columns[1].width - 12);
+    const contentLines = patientNameLines.length + serviceLines.length;
+    const rowHeight = Math.max(34, contentLines * 8 + 12);
+    if (y + rowHeight > 566) { pdf.addPage(); y = 34; pdf.setTextColor(15, 118, 110); pdf.setFont("helvetica", "bold"); pdf.setFontSize(10); pdf.text(`${state.settings.clinicName || "Clinic Control"} - Reporte de pagos`, margin, y); y += 14; drawHeader(); }
+    const rowTop = y;
+    const visitDate = new Date(visit.date).toLocaleDateString("es-US");
+    pdf.setTextColor(23, 32, 51); pdf.setFont("helvetica", "normal"); pdf.setFontSize(7.4);
+    pdf.text(visitDate, columns[0].x + 6, rowTop + 12); pdf.setTextColor(80, 95, 115); pdf.setFontSize(6.7); pdf.text(invoiceNumber(visit), columns[0].x + 6, rowTop + 23);
+    pdf.setTextColor(23, 32, 51); pdf.setFont("helvetica", "bold"); pdf.setFontSize(7.5); pdf.text(patientNameLines, columns[1].x + 6, rowTop + 11);
+    const serviceY = rowTop + 11 + patientNameLines.length * 8; pdf.setTextColor(80, 95, 115); pdf.setFont("helvetica", "normal"); pdf.setFontSize(6.8); pdf.text(serviceLines, columns[1].x + 6, serviceY);
+    pdf.setTextColor(23, 32, 51); pdf.setFontSize(7.4); pdf.text(value.type === "insurance" ? "Seguro" : "Cash", columns[2].x + 6, rowTop + 15);
+    const amountY = rowTop + 15; [value.total, value.patientPaid, value.insurancePaid, value.patientPending + value.insurancePending].forEach((amount, index) => { const column = columns[index + 3]; pdf.text(money(amount), column.x + column.width - 6, amountY, { align: "right" }); });
+    y += rowHeight; pdf.setDrawColor(226, 232, 240); pdf.line(margin, y, right, y);
+  });
+  const pages = pdf.getNumberOfPages();
+  for (let page = 1; page <= pages; page += 1) { pdf.setPage(page); pdf.setTextColor(100, 116, 139); pdf.setFont("helvetica", "normal"); pdf.setFontSize(7); pdf.text(`Pagina ${page} de ${pages}`, right, 594, { align: "right" }); }
   pdf.save(`reporte-pagos-${activeBillingTab}-${localDateValue()}.pdf`);
 }
 
@@ -1073,15 +1134,9 @@ function downloadInvoicePdf(id = activeInvoiceId) {
   pdf.setFontSize(20);
   pdf.setFont("helvetica", "bold");
   let clinicNameX = left;
-  if (state.settings.clinicLogo) {
-    try {
-      const logoX = design.logoPosition === "right" ? 470 : (design.logoPosition === "center" ? 274 : left);
-      pdf.addImage(state.settings.clinicLogo, logoX, 22, 46, 30, undefined, "FAST");
-      if (design.logoPosition === "left") clinicNameX = 104;
-    } catch (error) {
-      console.warn("El logo no pudo agregarse al PDF.", error);
-    }
-  }
+  if (design.logoPosition === "left") clinicNameX += addClinicLogoToPdf(pdf, left, 20, 46, 32);
+  else if (design.logoPosition === "center") addClinicLogoToPdf(pdf, 278, 18, 46, 32);
+  else addClinicLogoToPdf(pdf, 466, 18, 46, 32);
   pdf.text(state.settings.clinicName || "Clinic Control", clinicNameX, y);
   pdf.setFontSize(17);
   pdf.text("FACTURA", right, y, { align: "right" });
