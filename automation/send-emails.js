@@ -130,7 +130,7 @@ async function sendBirthdayEmails(clinicNames) {
 
   for (const doc of patients.docs) {
     const patient = doc.data();
-    if (!patient.birthdayEmailEnabled || !patient.email || !patient.birthDate?.endsWith(suffix)) continue;
+    if (!patient.emailNotificationsEnabled || !patient.birthdayEmailEnabled || !patient.email || !patient.birthDate?.endsWith(suffix)) continue;
     const clinicRef = doc.ref.parent.parent;
     if (!clinicRef) continue;
     const clinic = await clinicSettingsFor(clinicRef, clinicNames);
@@ -162,7 +162,7 @@ async function sendAppointmentReminders(clinicNames) {
     if (!clinicRef || !visit.patientId) continue;
     const patientDoc = await clinicRef.collection("patients").doc(visit.patientId).get();
     const patient = patientDoc.data();
-    if (!patient?.email) continue;
+    if (!patient?.email || !patient.emailNotificationsEnabled) continue;
     const clinic = await clinicSettingsFor(clinicRef, clinicNames);
 
     if (await sendOnce({

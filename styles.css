@@ -987,6 +987,27 @@ button {
   outline: none;
 }
 
+.invoice-filters {
+  align-items: end;
+}
+
+.invoice-filters label {
+  min-width: 280px;
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.invoice-filters select {
+  min-height: 47px;
+  border: 1px solid var(--line);
+  border-radius: 15px;
+  padding: 0 14px;
+  background: white;
+}
+
 .panel-toolbar input:focus,
 .modal input:focus,
 .modal textarea:focus,
@@ -1302,6 +1323,124 @@ td small {
   font-weight: 500;
 }
 
+.service-editor {
+  display: grid;
+  gap: 12px;
+}
+
+.service-lines {
+  display: grid;
+  gap: 10px;
+}
+
+.service-line {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 180px 38px;
+  gap: 10px;
+  align-items: end;
+  padding: 14px;
+  border: 1px solid #dbe5eb;
+  border-radius: 15px;
+  background: #f8fafc;
+}
+
+.service-line .service-remove {
+  margin-bottom: 1px;
+  color: var(--danger);
+  font-size: 20px;
+}
+
+.service-add {
+  justify-self: start;
+}
+
+.invoice-view {
+  white-space: nowrap;
+}
+
+.invoice-sheet {
+  color: #172033;
+}
+
+.invoice-sheet > header,
+.invoice-meta,
+.invoice-summary > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.invoice-sheet > header {
+  align-items: flex-start;
+  padding-bottom: 22px;
+  border-bottom: 2px solid var(--primary);
+}
+
+.invoice-sheet h2,
+.invoice-sheet p {
+  margin: 0;
+}
+
+.invoice-sheet p,
+.invoice-sheet span,
+.invoice-sheet small {
+  color: var(--muted);
+}
+
+.invoice-heading {
+  display: grid;
+  justify-items: end;
+  gap: 4px;
+}
+
+.invoice-heading strong {
+  color: var(--primary);
+  font-size: 23px;
+}
+
+.invoice-meta {
+  margin: 22px 0;
+}
+
+.invoice-meta > div {
+  min-width: 220px;
+  display: grid;
+  gap: 4px;
+}
+
+.invoice-items {
+  min-width: 0;
+}
+
+.invoice-items th:last-child,
+.invoice-items td:last-child {
+  text-align: right;
+}
+
+.invoice-summary {
+  width: min(320px, 100%);
+  margin: 18px 0 0 auto;
+  display: grid;
+  gap: 8px;
+}
+
+.invoice-summary > div {
+  padding: 9px 12px;
+  border-radius: 10px;
+  background: #f8fafc;
+}
+
+.invoice-summary .invoice-balance {
+  background: #e8faf7;
+}
+
+.invoice-notes {
+  margin-top: 24px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
 dialog {
   border: 0;
   padding: 0;
@@ -1560,6 +1699,20 @@ dialog::backdrop {
 
   .panel-toolbar input {
     width: 100%;
+  }
+
+  .invoice-filters label,
+  .invoice-filters select {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .service-line {
+    grid-template-columns: 1fr 42px;
+  }
+
+  .service-line .field-group:first-child {
+    grid-column: 1 / -1;
   }
 
   table {
@@ -2000,6 +2153,28 @@ dialog::backdrop {
 
   body {
     background: white;
+  }
+
+  body:has(#invoiceDialog[open]) .app-shell,
+  body:has(#invoiceDialog[open]) #toast {
+    display: none !important;
+  }
+
+  body:has(#invoiceDialog[open]) #invoiceDialog {
+    display: block !important;
+    position: static;
+    width: 100%;
+    max-height: none;
+  }
+
+  body:has(#invoiceDialog[open]) #invoiceDialog .modal {
+    max-height: none;
+    box-shadow: none;
+  }
+
+  body:has(#invoiceDialog[open]) #invoiceDialog .modal-head,
+  body:has(#invoiceDialog[open]) #invoiceDialog .modal-actions {
+    display: none !important;
   }
 }
 .auth-field-note {

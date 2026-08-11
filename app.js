@@ -4,6 +4,7 @@ let auth = null;
 let unsubscribeSettings = null;
 let unsubscribePatients = null;
 let unsubscribeVisits = null;
+let activeInvoiceId = null;
 
 function uid() {
   if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
@@ -265,6 +266,27 @@ function money(value) {
   });
 }
 
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function invoiceNumber(visit) {
+  return visit.invoiceNumber || `FAC-${String(visit.id || "").slice(0, 8).toUpperCase()}`;
+}
+
+function visitItems(visit) {
+  if (Array.isArray(visit?.lineItems) && visit.lineItems.length) return visit.lineItems;
+  if (Number(visit?.total || 0) > 0) {
+    return [{ id: uid(), description: visit.reason || "Consulta", price: Number(visit.total) }];
+  }
+  return [];
+}
+
 function updateUserInfo() {
   const user = auth.currentUser;
   if (user) {
@@ -346,6 +368,7 @@ function showPage(pageId) {
     patients: "Pacientes",
     visits: "Consultas",
     billing: "Cobros",
+    invoices: "Facturas",
     reports: "Reportes",
     settings: "Ajustes"
   };
@@ -360,6 +383,8 @@ function render() {
   renderVisitOptions();
   renderVisits();
   renderBilling();
+  renderInvoicePatientOptions();
+  renderInvoices();
   renderReports();
   renderSettings();
 }
@@ -561,6 +586,160 @@ function renderBilling() {
   `).join("");
 }
 
+function renderInvoices() {
+  const table = $("#invoicesTable");
+  if (!table) return;
+  const query = ($("#invoiceSearch")?.value || "").toLowerCase().trim();
+  const patientId = $("#invoicePatientFilter")?.value || "";
+  const rows = [...state.visits]
+    .filter((visit) => {
+      if (patientId && visit.patientId !== patientId) return false;
+      const p = patient(visit.patientId);
+      const services = visitItems(visit).map((item) => item.description).join(" ");
+      return `${invoiceNumber(visit)} ${p?.name || ""} ${services}`.toLowerCase().includes(query);
+    })
+    .sort((a, b) => new Date(b.date) - new Date(a.date));
+
+  table.innerHTML = rows.length ? rows.map((visit) => {
+    const p = patient(visit.patientId);
+    const items = visitItems(visit);
+    const due = balance(visit);
+    return `
+      <tr>
+        <td><strong>${escapeHtml(invoiceNumber(visit))}</strong></td>
+        <td>${fmtDate(visit.date)}</td>
+        <td><strong>${escapeHtml(p?.name || "Paciente eliminado")}</strong></td>
+        <td>${items.length} concepto(s)<br><small>${escapeHtml(items.map((item) => item.description).join(", ") || "Sin detalle")}</small></td>
+        <td>${money(visit.total)}</td>
+        <td>${money(visit.paid)}</td>
+        <td><span class="badge ${due > 0 ? "red" : "green"}">${money(due)}</span></td>
+        <td><button class="btn light invoice-view" onclick="openInvoice('${visit.id}')">Ver factura</button></td>
+      </tr>
+    `;
+  }).join("") : `<tr><td class="empty" colspan="8">No hay facturas registradas.</td></tr>`;
+}
+
+function renderInvoicePatientOptions() {
+  const select = $("#invoicePatientFilter");
+  if (!select) return;
+  const selected = select.value;
+  const patientIdsWithVisits = new Set(state.visits.map((visit) => visit.patientId));
+  const options = state.patients
+    .filter((item) => patientIdsWithVisits.has(item.id))
+    .sort((a, b) => a.name.localeCompare(b.name, "es"));
+  select.innerHTML = `<option value="">Todos los clientes</option>${options.map((item) => `<option value="${item.id}">${escapeHtml(item.name)}</option>`).join("")}`;
+  if (options.some((item) => item.id === selected)) select.value = selected;
+}
+
+function openInvoice(id) {
+  const visit = state.visits.find((item) => item.id === id);
+  if (!visit) return;
+  const p = patient(visit.patientId);
+  const items = visitItems(visit);
+  const due = balance(visit);
+  activeInvoiceId = id;
+  $("#invoiceDialogTitle").textContent = invoiceNumber(visit);
+  $("#invoiceDetail").innerHTML = `
+    <article class="invoice-sheet">
+      <header>
+        <div><h2>${escapeHtml(state.settings.clinicName || "Clinic Control")}</h2><p>${escapeHtml(state.settings.clinicAddress || "")}</p></div>
+        <div class="invoice-heading"><strong>FACTURA</strong><span>${escapeHtml(invoiceNumber(visit))}</span></div>
+      </header>
+      <div class="invoice-meta">
+        <div><small>Paciente</small><strong>${escapeHtml(p?.name || "Paciente eliminado")}</strong><span>${escapeHtml(p?.phone || "")}</span></div>
+        <div><small>Fecha</small><strong>${fmtDate(visit.date)}</strong><span>${escapeHtml(visit.doctor || "Sin doctor asignado")}</span></div>
+      </div>
+      <table class="invoice-items">
+        <thead><tr><th>Descripción del servicio</th><th>Precio</th></tr></thead>
+        <tbody>${items.map((item) => `<tr><td>${escapeHtml(item.description)}</td><td>${money(item.price)}</td></tr>`).join("")}</tbody>
+      </table>
+      <div class="invoice-summary">
+        <div><span>Total</span><strong>${money(visit.total)}</strong></div>
+        <div><span>Pagado</span><strong>${money(visit.paid)}</strong></div>
+        <div class="invoice-balance"><span>Balance</span><strong>${money(due)}</strong></div>
+      </div>
+      ${visit.notes ? `<div class="invoice-notes"><strong>Notas</strong><p>${escapeHtml(visit.notes)}</p></div>` : ""}
+    </article>`;
+  $("#invoiceDialog").showModal();
+}
+
+function downloadInvoicePdf(id = activeInvoiceId) {
+  const visit = state.visits.find((item) => item.id === id);
+  if (!visit) return;
+  if (!window.jspdf?.jsPDF) {
+    toast("No se pudo cargar el generador de PDF.");
+    return;
+  }
+
+  const p = patient(visit.patientId);
+  const items = visitItems(visit);
+  const { jsPDF } = window.jspdf;
+  const pdf = new jsPDF({ unit: "pt", format: "letter" });
+  const left = 48;
+  const right = 564;
+  let y = 52;
+
+  pdf.setTextColor(15, 118, 110);
+  pdf.setFontSize(20);
+  pdf.setFont("helvetica", "bold");
+  pdf.text(state.settings.clinicName || "Clinic Control", left, y);
+  pdf.setFontSize(17);
+  pdf.text("FACTURA", right, y, { align: "right" });
+  y += 22;
+  pdf.setTextColor(80, 95, 115);
+  pdf.setFontSize(10);
+  pdf.setFont("helvetica", "normal");
+  pdf.text(state.settings.clinicAddress || "", left, y);
+  pdf.text(invoiceNumber(visit), right, y, { align: "right" });
+  y += 24;
+  pdf.setDrawColor(20, 184, 166);
+  pdf.line(left, y, right, y);
+  y += 28;
+
+  pdf.setTextColor(23, 32, 51);
+  pdf.setFont("helvetica", "bold");
+  pdf.text(`Cliente: ${p?.name || "Paciente eliminado"}`, left, y);
+  pdf.text(`Fecha: ${fmtDate(visit.date)}`, 320, y);
+  y += 17;
+  pdf.setFont("helvetica", "normal");
+  pdf.text(`Teléfono: ${p?.phone || "No indicado"}`, left, y);
+  pdf.text(`Doctor: ${visit.doctor || "No indicado"}`, 320, y);
+  y += 32;
+
+  pdf.setFillColor(241, 245, 249);
+  pdf.rect(left, y - 14, right - left, 24, "F");
+  pdf.setFont("helvetica", "bold");
+  pdf.text("Descripción del servicio", left + 8, y);
+  pdf.text("Precio", right - 8, y, { align: "right" });
+  y += 26;
+
+  pdf.setFont("helvetica", "normal");
+  items.forEach((item) => {
+    const lines = pdf.splitTextToSize(item.description || "Servicio", 390);
+    const rowHeight = Math.max(22, lines.length * 13 + 8);
+    if (y + rowHeight > 700) {
+      pdf.addPage();
+      y = 52;
+    }
+    pdf.text(lines, left + 8, y);
+    pdf.text(money(item.price), right - 8, y, { align: "right" });
+    y += rowHeight;
+    pdf.setDrawColor(226, 232, 240);
+    pdf.line(left, y - 8, right, y - 8);
+  });
+
+  y += 8;
+  pdf.setFont("helvetica", "bold");
+  pdf.text(`Total: ${money(visit.total)}`, right, y, { align: "right" });
+  y += 18;
+  pdf.text(`Pagado: ${money(visit.paid)}`, right, y, { align: "right" });
+  y += 18;
+  pdf.setTextColor(balance(visit) > 0 ? 185 : 4, balance(visit) > 0 ? 28 : 120, balance(visit) > 0 ? 28 : 87);
+  pdf.text(`Balance: ${money(balance(visit))}`, right, y, { align: "right" });
+
+  pdf.save(`${invoiceNumber(visit)}-${(p?.name || "cliente").replace(/[^a-z0-9áéíóúñ]+/gi, "-")}.pdf`);
+}
+
 function renderReports() {
   const dayVisits = state.visits.filter((visit) => onlyDate(visit.date) === today());
   const dayTotals = totals(dayVisits);
@@ -643,6 +822,8 @@ function openPatientDialog(p = null) {
   $("#patientBirthDate").value = p?.birthDate || "";
   $("#patientBirthDate").max = today();
   $("#patientLanguage").value = p?.language || "Español";
+  $("#patientEmailNotifications").checked = Boolean(p?.emailNotificationsEnabled);
+  $("#patientSmsNotifications").checked = Boolean(p?.smsNotificationsEnabled);
   $("#patientBirthdayEmail").checked = Boolean(p?.birthdayEmailEnabled);
   $("#patientDocument").value = p?.document || "";
   $("#patientNotes").value = p?.notes || "";
@@ -668,13 +849,57 @@ function openVisitDialog(visit = null) {
   $("#visitDoctor").value = visit?.doctor || "";
   $("#visitStatus").value = visit?.status || (visit ? "Completada" : "Programada");
   $("#visitReminderEnabled").checked = visit ? Boolean(visit.reminderEnabled) : true;
-  $("#visitTotal").value = visit?.total ?? "";
+  renderVisitLineItems(visitItems(visit));
   $("#visitPaid").value = visit?.paid ?? 0;
   $("#visitReason").value = visit?.reason || "";
   $("#visitNotes").value = visit?.notes || "";
   clearFormErrors($("#visitForm"));
   $("#visitDialog").showModal();
   requestAnimationFrame(() => $("#visitPatient").focus());
+}
+
+function renderVisitLineItems(items = []) {
+  const box = $("#visitLineItems");
+  const rows = items.length ? items : [{ id: uid(), description: "", price: "" }];
+  box.innerHTML = rows.map((item) => `
+    <div class="service-line" data-line-id="${escapeHtml(item.id || uid())}">
+      <label class="field-group"><span class="field-label">Servicio o procedimiento</span>
+        <input class="service-description" type="text" value="${escapeHtml(item.description)}" placeholder="Ej. Consulta, tratamiento o producto" />
+      </label>
+      <label class="field-group"><span class="field-label">Precio</span>
+        <div class="input-prefix"><span>$</span><input class="service-price" type="number" step="0.01" min="0" value="${item.price ?? ""}" placeholder="0.00" /></div>
+      </label>
+      <button type="button" class="icon-btn service-remove" title="Eliminar servicio">×</button>
+    </div>`).join("");
+
+  box.querySelectorAll("input").forEach((input) => input.addEventListener("input", () => {
+    updateVisitTotal();
+    validateVisitForm();
+  }));
+  box.querySelectorAll(".service-remove").forEach((button) => button.addEventListener("click", () => {
+    if (box.children.length === 1) {
+      box.querySelector(".service-description").value = "";
+      box.querySelector(".service-price").value = "";
+    } else {
+      button.closest(".service-line").remove();
+    }
+    updateVisitTotal();
+    validateVisitForm();
+  }));
+  updateVisitTotal();
+}
+
+function collectVisitLineItems() {
+  return [...$("#visitLineItems").querySelectorAll(".service-line")].map((row) => ({
+    id: row.dataset.lineId || uid(),
+    description: row.querySelector(".service-description").value.trim(),
+    price: Number(row.querySelector(".service-price").value || 0)
+  }));
+}
+
+function updateVisitTotal() {
+  const total = collectVisitLineItems().reduce((sum, item) => sum + item.price, 0);
+  $("#visitTotal").value = total.toFixed(2);
 }
 
 function setFieldError(input, errorElement, message = "") {
@@ -700,32 +925,51 @@ function validatePatientForm() {
   const name = $("#patientName");
   const age = $("#patientAge");
   const birthDate = $("#patientBirthDate");
+  const phone = $("#patientPhone");
   const email = $("#patientEmail");
+  const emailNotificationsEnabled = $("#patientEmailNotifications").checked;
+  const smsNotificationsEnabled = $("#patientSmsNotifications").checked;
   const birthdayEmailEnabled = $("#patientBirthdayEmail").checked;
   const trimmedName = name.value.trim();
   const ageNumber = age.value === "" ? null : Number(age.value);
   const birthDateMessage = birthDate.value && birthDate.value > today() ? "La fecha de nacimiento no puede ser futura." : "";
-  const emailMessage = birthdayEmailEnabled && !email.value.trim()
-    ? "Agrega un correo para activar las felicitaciones."
+  const emailMessage = (emailNotificationsEnabled || birthdayEmailEnabled) && !email.value.trim()
+    ? "Agrega un correo para autorizar las notificaciones."
     : (email.value && !email.validity.valid ? "Escribe un correo electrónico válido." : "");
+  const phoneMessage = smsNotificationsEnabled && !phone.value.trim()
+    ? "Agrega un teléfono para autorizar los mensajes de texto."
+    : "";
+  const birthdayMessage = birthdayEmailEnabled && !emailNotificationsEnabled
+    ? "Autoriza primero las notificaciones por correo electrónico."
+    : "";
 
   setFieldError(name, $("#patientNameError"), trimmedName.length < 2 ? "Escribe el nombre completo del paciente." : "");
   setFieldError(age, $("#patientAgeError"), ageNumber !== null && (ageNumber < 0 || ageNumber > 120) ? "La edad debe estar entre 0 y 120 años." : "");
   setFieldError(birthDate, $("#patientBirthDateError"), birthDateMessage);
-  setFieldError(email, $("#patientEmailError"), emailMessage);
-  return trimmedName.length >= 2 && !birthDateMessage && !emailMessage && (ageNumber === null || (ageNumber >= 0 && ageNumber <= 120));
+  setFieldError(phone, $("#patientPhoneError"), phoneMessage);
+  setFieldError(email, $("#patientEmailError"), emailMessage || birthdayMessage);
+  return trimmedName.length >= 2 && !birthDateMessage && !phoneMessage && !emailMessage && !birthdayMessage && (ageNumber === null || (ageNumber >= 0 && ageNumber <= 120));
 }
 
 function validateVisitForm() {
   const total = Number($("#visitTotal").value || 0);
   const paid = Number($("#visitPaid").value || 0);
   const reason = $("#visitReason");
+  const items = collectVisitLineItems();
+  const itemRows = [...$("#visitLineItems").querySelectorAll(".service-line")];
+  const invalidItems = items.some((item, index) => {
+    const rawPrice = itemRows[index]?.querySelector(".service-price").value;
+    return !item.description || rawPrice === "" || !Number.isFinite(item.price) || item.price < 0;
+  });
+  const itemsMessage = invalidItems ? "Completa la descripción y el precio de cada servicio." : "";
   const paidMessage = paid > total ? "El pago no puede ser mayor que el total." : "";
   const reasonMessage = reason.value.trim().length < 3 ? "Describe brevemente el motivo de la consulta." : "";
 
   setFieldError($("#visitPaid"), $("#visitPaidError"), paidMessage);
   setFieldError(reason, $("#visitReasonError"), reasonMessage);
-  return !paidMessage && !reasonMessage;
+  $("#visitLineItemsError").textContent = itemsMessage;
+  $("#visitLineItemsError").classList.toggle("visible", Boolean(itemsMessage));
+  return !paidMessage && !reasonMessage && !itemsMessage;
 }
 
 function editPatient(id) {
@@ -766,6 +1010,8 @@ window.editPatient = editPatient;
 window.deletePatient = deletePatient;
 window.editVisit = editVisit;
 window.deleteVisit = deleteVisit;
+window.openInvoice = openInvoice;
+window.downloadInvoicePdf = downloadInvoicePdf;
 
 $$(".nav-item").forEach((button) => button.addEventListener("click", () => showPage(button.dataset.page)));
 $$("[data-go]").forEach((button) => button.addEventListener("click", () => showPage(button.dataset.go)));
@@ -795,6 +1041,9 @@ $("#visitCreateBtn").addEventListener("click", () => openVisitDialog());
 
 $("#patientSearch").addEventListener("input", renderPatients);
 $("#visitSearch").addEventListener("input", renderVisits);
+$("#invoiceSearch").addEventListener("input", renderInvoices);
+$("#invoicePatientFilter").addEventListener("change", renderInvoices);
+$("#downloadInvoiceBtn").addEventListener("click", () => downloadInvoicePdf());
 
 $("#globalSearch").addEventListener("input", (event) => {
   const value = event.target.value.trim();
@@ -806,7 +1055,10 @@ $("#globalSearch").addEventListener("input", (event) => {
 
 $("#patientName").addEventListener("input", validatePatientForm);
 $("#patientAge").addEventListener("input", validatePatientForm);
+$("#patientPhone").addEventListener("input", validatePatientForm);
 $("#patientEmail").addEventListener("input", validatePatientForm);
+$("#patientEmailNotifications").addEventListener("change", validatePatientForm);
+$("#patientSmsNotifications").addEventListener("change", validatePatientForm);
 $("#patientBirthdayEmail").addEventListener("change", validatePatientForm);
 $("#patientBirthDate").addEventListener("change", () => {
   const calculatedAge = ageFromBirthDate($("#patientBirthDate").value);
@@ -816,6 +1068,10 @@ $("#patientBirthDate").addEventListener("change", () => {
 $("#visitPaid").addEventListener("input", validateVisitForm);
 $("#visitTotal").addEventListener("input", validateVisitForm);
 $("#visitReason").addEventListener("input", validateVisitForm);
+$("#addVisitLineItem").addEventListener("click", () => {
+  renderVisitLineItems([...collectVisitLineItems(), { id: uid(), description: "", price: "" }]);
+  $("#visitLineItems .service-line:last-child .service-description").focus();
+});
 
 $("#patientForm").addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -831,6 +1087,8 @@ $("#patientForm").addEventListener("submit", async (event) => {
     age: $("#patientAge").value,
     birthDate: $("#patientBirthDate").value,
     language: $("#patientLanguage").value,
+    emailNotificationsEnabled: $("#patientEmailNotifications").checked,
+    smsNotificationsEnabled: $("#patientSmsNotifications").checked,
     birthdayEmailEnabled: $("#patientBirthdayEmail").checked,
     document: $("#patientDocument").value.trim(),
     notes: $("#patientNotes").value.trim(),
@@ -857,8 +1115,11 @@ $("#visitForm").addEventListener("submit", async (event) => {
   if (!validateVisitForm()) return;
 
   const id = $("#visitId").value;
+  const recordId = id || uid();
+  const existingVisit = state.visits.find((visit) => visit.id === id);
+  const lineItems = collectVisitLineItems();
   const data = {
-    id: id || uid(),
+    id: recordId,
     patientId: $("#visitPatient").value,
     type: $("#visitType").value,
     date: $("#visitDate").value,
@@ -867,6 +1128,8 @@ $("#visitForm").addEventListener("submit", async (event) => {
     reminderEnabled: $("#visitReminderEnabled").checked,
     reason: $("#visitReason").value.trim(),
     notes: $("#visitNotes").value.trim(),
+    lineItems,
+    invoiceNumber: existingVisit?.invoiceNumber || `FAC-${recordId.slice(0, 8).toUpperCase()}`,
     total,
     paid
   };

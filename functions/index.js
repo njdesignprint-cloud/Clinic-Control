@@ -62,7 +62,7 @@ exports.sendBirthdayEmails = onSchedule({
 
   for (const patientDoc of patients.docs) {
     const patient = patientDoc.data();
-    if (!patient.birthdayEmailEnabled || !patient.email || !patient.birthDate?.endsWith(birthdaySuffix)) continue;
+    if (!patient.emailNotificationsEnabled || !patient.birthdayEmailEnabled || !patient.email || !patient.birthDate?.endsWith(birthdaySuffix)) continue;
 
     const clinicRef = patientDoc.ref.parent.parent;
     if (!clinicRef) continue;
