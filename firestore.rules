@@ -57,6 +57,9 @@ service cloud.firestore {
     match /clinics/{clinicId}/communications/{document=**} {
       allow read, write: if belongsTo(clinicId);
     }
+    match /clinics/{clinicId}/clinicalRecords/{document=**} {
+      allow read, write: if hasRole(clinicId, ['admin', 'clinical']);
+    }
     match /clinics/{clinicId}/activities/{document=**} {
       allow read: if belongsTo(clinicId);
       allow create: if belongsTo(clinicId) && request.resource.data.userId == request.auth.uid;

@@ -1706,6 +1706,23 @@ td small {
 .communication-history p { margin: 4px 0; color: var(--text); }
 .communication-channel { width: 42px; height: 42px; border-radius: 50%; display: grid; place-items: center; color: var(--primary); background: #dff7f3; font-weight: 800; }
 @media (max-width: 700px) { .form-question-row, .form-template-row, .communication-history article { grid-template-columns: 1fr; } .communication-channel { grid-row: auto; } }
+.clinical-note-block { display: grid; gap: 16px; padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: #fbfdff; }
+.vitals-grid { display: grid; grid-template-columns: repeat(6, minmax(100px, 1fr)); gap: 10px; }
+.vitals-grid label, .soap-grid label { display: grid; gap: 6px; font-size: 12px; font-weight: 700; color: var(--muted); }
+.soap-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.clinical-allergy-alert, .clinical-no-allergies { display: flex; gap: 12px; align-items: center; margin: 14px 0; padding: 13px 15px; border-radius: 12px; }
+.clinical-allergy-alert { background: #fff1f2; color: #9f1239; border: 1px solid #fecdd3; }
+.clinical-no-allergies { background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; }
+.latest-vitals { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; margin-bottom: 16px; }
+.latest-vitals > div { display: grid; gap: 4px; padding: 12px; background: #f8fafc; border-radius: 10px; }
+.latest-vitals small { color: var(--muted); }
+.clinical-summary-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.clinical-summary-grid article { padding: 15px; border: 1px solid var(--line); border-radius: 12px; }
+.clinical-summary-grid h4 { margin: 0 0 8px; }
+.clinical-summary-grid p, .clinical-summary-grid ul { margin: 0; color: var(--muted); line-height: 1.55; }
+.patient-banner-clinical-alert { grid-column: 1 / -1; display: flex; gap: 10px; align-items: center; padding: 9px 12px; border-radius: 10px; background: #fff1f2; color: #9f1239; }
+@media (max-width: 950px) { .vitals-grid, .latest-vitals { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 650px) { .soap-grid, .clinical-summary-grid { grid-template-columns: 1fr; } .vitals-grid, .latest-vitals { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .patient-record-section-head { display: flex; justify-content: space-between; gap: 14px; align-items: center; margin: 20px 0 10px; }
 .patient-record-section-head h3 { margin: 0; }
 .task-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }

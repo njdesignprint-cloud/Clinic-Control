@@ -1,4 +1,4 @@
-let state = { settings: {}, patients: [], visits: [], appointments: [], payments: [], documents: [], tasks: [], activities: [], teamMembers: [], formTemplates: [], formResponses: [], communications: [] };
+let state = { settings: {}, patients: [], visits: [], appointments: [], payments: [], documents: [], tasks: [], activities: [], teamMembers: [], formTemplates: [], formResponses: [], communications: [], clinicalRecords: [] };
 let firestore = null;
 let auth = null;
 let storage = null;
@@ -16,6 +16,7 @@ let unsubscribeTeamMembers = null;
 let unsubscribeFormTemplates = null;
 let unsubscribeFormResponses = null;
 let unsubscribeCommunications = null;
+let unsubscribeClinicalRecords = null;
 let activeInvoiceId = null;
 let activeBillingTab = "all";
 let activeFinancePatientId = null;
@@ -62,7 +63,8 @@ function buildSeedState() {
     teamMembers: [],
     formTemplates: [],
     formResponses: [],
-    communications: []
+    communications: [],
+    clinicalRecords: []
   };
 }
 
@@ -95,7 +97,8 @@ function normalizeState(saved) {
     teamMembers: Array.isArray(saved?.teamMembers) ? saved.teamMembers : seed.teamMembers,
     formTemplates: Array.isArray(saved?.formTemplates) ? saved.formTemplates : seed.formTemplates,
     formResponses: Array.isArray(saved?.formResponses) ? saved.formResponses : seed.formResponses,
-    communications: Array.isArray(saved?.communications) ? saved.communications : seed.communications
+    communications: Array.isArray(saved?.communications) ? saved.communications : seed.communications,
+    clinicalRecords: Array.isArray(saved?.clinicalRecords) ? saved.clinicalRecords : seed.clinicalRecords
   };
 }
 
@@ -182,6 +185,7 @@ function unsubscribeAll() {
   if (unsubscribeFormTemplates) unsubscribeFormTemplates();
   if (unsubscribeFormResponses) unsubscribeFormResponses();
   if (unsubscribeCommunications) unsubscribeCommunications();
+  if (unsubscribeClinicalRecords) unsubscribeClinicalRecords();
   unsubscribeSettings = null;
   unsubscribePatients = null;
   unsubscribeVisits = null;
@@ -194,6 +198,7 @@ function unsubscribeAll() {
   unsubscribeFormTemplates = null;
   unsubscribeFormResponses = null;
   unsubscribeCommunications = null;
+  unsubscribeClinicalRecords = null;
 }
 
 function showAuthScreen() {
@@ -208,7 +213,7 @@ function showAppScreen() {
 }
 
 function clearState() {
-  state = { settings: {}, patients: [], visits: [], appointments: [], payments: [], documents: [], tasks: [], activities: [], teamMembers: [], formTemplates: [], formResponses: [], communications: [] };
+  state = { settings: {}, patients: [], visits: [], appointments: [], payments: [], documents: [], tasks: [], activities: [], teamMembers: [], formTemplates: [], formResponses: [], communications: [], clinicalRecords: [] };
   render();
 }
 
@@ -227,6 +232,7 @@ function subscribeToRealtime() {
   const formTemplatesRef = getCollectionRef("formTemplates");
   const formResponsesRef = getCollectionRef("formResponses");
   const communicationsRef = getCollectionRef("communications");
+  const clinicalRecordsRef = getCollectionRef("clinicalRecords");
 
   unsubscribeSettings = settingsRef.onSnapshot((doc) => {
     if (doc.exists) {
@@ -286,6 +292,10 @@ function subscribeToRealtime() {
     state.communications = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
     if ($("#patientRecord")?.classList.contains("active") && activePatientRecordId) renderPatientRecord();
   });
+  if (["admin", "clinical"].includes(currentAccess.role)) unsubscribeClinicalRecords = clinicalRecordsRef.onSnapshot((snapshot) => {
+    state.clinicalRecords = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+    if ($("#patientRecord")?.classList.contains("active") && activePatientRecordId) renderPatientRecord();
+  });
 }
 
 const roleLabels = { admin: "Administrador", reception: "Recepción", clinical: "Profesional clínico", accounting: "Contabilidad" };
@@ -296,9 +306,9 @@ const rolePages = {
   accounting: ["dashboard", "patients", "tasks", "billing", "invoices", "reports", "patientRecord"]
 };
 const patientRecordTabsByRole = {
-  admin: ["summary", "visits", "documents", "payments", "alerts", "communications", "timeline"],
+  admin: ["summary", "visits", "documents", "payments", "clinical", "alerts", "communications", "timeline"],
   reception: ["summary", "documents", "alerts", "communications", "timeline"],
-  clinical: ["summary", "visits", "documents", "alerts", "communications", "timeline"],
+  clinical: ["summary", "visits", "documents", "clinical", "alerts", "communications", "timeline"],
   accounting: ["summary", "visits", "payments", "communications", "timeline"]
 };
 
@@ -954,6 +964,8 @@ function renderPatientRecord() {
   const docs = visits.flatMap((visit) => (visit.documents || []).map((doc) => ({ ...doc, visit })));
   const digitalForms = state.formResponses.filter((entry) => entry.patientId === p.id).sort((a, b) => new Date(b.updatedAt || b.createdAt) - new Date(a.updatedAt || a.createdAt));
   const communications = state.communications.filter((entry) => entry.patientId === p.id).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  const clinicalRecord = state.clinicalRecords.find((entry) => entry.id === p.id || entry.patientId === p.id) || {};
+  const latestVitalsVisit = visits.find((visit) => visit.vitals && Object.values(visit.vitals).some(Boolean));
   const patientTasks = state.tasks.filter((task) => task.patientId === p.id).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   const historicEvents = [
     { id: `patient-${p.id}`, entityType: "patient", title: "Paciente registrado", detail: "Expediente creado", createdAt: p.createdAt },
@@ -972,13 +984,39 @@ function renderPatientRecord() {
   applyRoleAccess();
   $$('[data-patient-record-tab]').forEach((button) => button.classList.toggle("active", button.dataset.patientRecordTab === activePatientRecordTab));
   const summary = `${patientHasAlert(p) ? `<div class="patient-finance-alert"><div><strong>📌 ${escapeHtml(p.patientAlertMessage)}</strong><span>${patientAlertDateLabel(p)}</span></div><button class="btn light" onclick="resolvePatientAlert('${p.id}')">Marcar resuelta</button></div>` : ""}<div class="patient-record-metrics"><div><small>Consultas</small><strong>${visits.length}</strong></div><div><small>Facturado</small><strong>${money(data.billed)}</strong></div><div><small>Pagado</small><strong>${money(data.paid)}</strong></div><div><small>Balance</small><strong>${money(data.debt)}</strong></div></div><div class="patient-record-grid"><article><h3>Información</h3><dl><div><dt>Nacimiento</dt><dd>${fmtBirthDate(p.birthDate)}</dd></div><div><dt>Edad</dt><dd>${escapeHtml(p.age || "—")}</dd></div><div><dt>Idioma</dt><dd>${escapeHtml(p.language || "—")}</dd></div><div><dt>Forma de pago</dt><dd>${escapeHtml(payerLabel(p))}</dd></div><div><dt>Seguro</dt><dd>${escapeHtml(p.insuranceCompany || "—")}</dd></div></dl></article><article><h3>Notas</h3><p>${escapeHtml(p.notes || "No hay notas generales para este paciente.")}</p></article></div>`;
-  const visitHtml = visits.length ? `<div class="patient-record-list">${visits.map((visit) => `<div><span><strong>${fmtDate(visit.date)} · ${escapeHtml(visit.reason || "Consulta")}</strong><small>${escapeHtml(visit.doctor || "Sin profesional")} · ${escapeHtml(invoiceNumber(visit))}</small></span><span><strong>${money(visit.total)}</strong><small>Balance ${money(balance(visit))}</small></span><button class="btn light" onclick="editVisit('${visit.id}')">Abrir</button></div>`).join("")}</div>` : `<div class="empty">Este paciente todavía no tiene consultas.</div>`;
+  const visitHtml = visits.length ? `<div class="patient-record-list">${visits.map((visit) => `<div><span><strong>${fmtDate(visit.date)} · ${escapeHtml(visit.reason || "Consulta")}</strong><small>${escapeHtml(visit.doctor || "Sin profesional")} · ${escapeHtml((visit.diagnoses || []).join(", ") || invoiceNumber(visit))}</small></span><span><strong>${money(visit.total)}</strong><small>Balance ${money(balance(visit))}</small></span>${["admin", "clinical"].includes(currentAccess.role) ? `<button class="btn light" onclick="editVisit('${visit.id}')">Abrir</button>` : ""}</div>`).join("")}</div>` : `<div class="empty">Este paciente todavía no tiene consultas.</div>`;
   const documentHtml = `<div class="patient-record-section-head"><h3>Formularios digitales</h3><button class="btn primary" onclick="assignDigitalForm('${p.id}')">+ Asignar formulario</button></div>${digitalForms.length ? `<div class="patient-record-list">${digitalForms.map((entry) => `<div><span><strong>${escapeHtml(entry.templateName || "Formulario")}</strong><small>${formCategoryLabels[entry.category] || "Formulario"} · ${fmtDate(entry.updatedAt || entry.createdAt)}</small></span><span class="badge ${entry.status === "completed" ? "green" : "red"}">${entry.status === "completed" ? "Completado" : "Pendiente"}</span><button class="btn light" onclick="openPatientDigitalForm('${entry.id}')">${entry.status === "completed" ? "Ver / editar" : "Completar"}</button></div>`).join("")}</div>` : `<div class="empty">No hay formularios digitales asignados.</div>`}<div class="patient-record-section-head section-spaced"><h3>Documentos y firmas</h3></div>${docs.length ? `<div class="patient-record-list">${docs.map((doc) => `<div><span><strong>${escapeHtml(doc.name)}</strong><small>${fmtDate(doc.visit.date)} · ${doc.status === "signed" ? `Firmado por ${escapeHtml(doc.signedBy)}` : "Pendiente de firma"}</small></span><span class="badge ${doc.status === "signed" ? "green" : "red"}">${doc.status === "signed" ? "Firmado" : "Pendiente"}</span>${doc.url ? `<a class="btn light" href="${escapeHtml(doc.url)}" target="_blank" rel="noopener">Ver</a>` : ""}</div>`).join("")}</div>` : `<div class="empty">No hay documentos asignados.</div>`}`;
   const paymentHtml = `<div class="patient-record-metrics"><div><small>Facturado</small><strong>${money(data.billed)}</strong></div><div><small>Pagado</small><strong>${money(data.paid)}</strong></div><div><small>Balance</small><strong>${money(data.debt)}</strong></div></div>${payments.length ? `<div class="patient-record-list">${payments.map((entry) => `<div><span><strong>${fmtDate(entry.date)} · ${escapeHtml(paymentMethodLabel(entry.method))}</strong><small>${escapeHtml(entry.reference || "Sin referencia")}${entry.note ? ` · ${escapeHtml(entry.note)}` : ""}</small></span><strong>${money(entry.amount)}</strong><button class="btn light" onclick="openInvoice('${entry.visitId}')">Factura</button></div>`).join("")}</div>` : `<div class="empty">No hay abonos posteriores registrados.</div>`}`;
   const alertHtml = `${patientHasAlert(p) ? `<div class="patient-alert-detail"><span>📌</span><div><h3>${escapeHtml(p.patientAlertMessage)}</h3><p>${patientAlertDateLabel(p)}</p></div><button class="btn primary" onclick="resolvePatientAlert('${p.id}')">Marcar resuelta</button></div>` : ""}<div class="patient-record-section-head"><h3>Tareas y seguimientos</h3><button class="btn primary" onclick="openTaskDialog('', '${p.id}')">+ Agregar tarea</button></div>${patientTasks.length ? `<div class="patient-record-list">${patientTasks.map((task) => `<div><span><strong>${escapeHtml(task.title)}</strong><small>${taskTypes[task.type] || "Tarea"} · ${task.dueDate ? new Date(task.dueDate).toLocaleString("es-US") : "Sin fecha"}</small></span><span class="badge ${task.status === "completed" ? "green" : taskIsOverdue(task) ? "red" : "blue"}">${task.status === "completed" ? "Completada" : taskIsOverdue(task) ? "Vencida" : "Pendiente"}</span><button class="btn light" onclick="toggleTask('${task.id}')">${task.status === "completed" ? "Reabrir" : "Completar"}</button></div>`).join("")}</div>` : `<div class="empty">No hay tareas para este paciente.</div>`}`;
   const communicationHtml = `<div class="patient-record-section-head"><h3>Historial de comunicaciones</h3><button class="btn primary" onclick="openCommunicationDialog('${p.id}')">+ Registrar contacto</button></div>${communications.length ? `<div class="communication-history">${communications.map((entry) => `<article><span class="communication-channel">${communicationIcons[entry.channel] || "●"}</span><div><strong>${escapeHtml(entry.subject)}</strong><p>${escapeHtml(entry.notes || "Sin notas")}</p><small>${entry.direction === "inbound" ? "Entrante" : "Saliente"} · ${communicationChannelLabels[entry.channel] || entry.channel} · ${fmtDate(entry.createdAt)} · ${escapeHtml(entry.userEmail || "Equipo")}</small></div>${communicationActionHtml(entry, p)}</article>`).join("")}</div>` : `<div class="empty">Todavía no se han registrado comunicaciones.</div>`}`;
+  const clinicalHtml = `<div class="patient-record-section-head"><div><h3>Resumen clínico</h3><small>Actualizado ${clinicalRecord.updatedAt ? fmtDate(clinicalRecord.updatedAt) : "—"}</small></div><button class="btn primary" onclick="openClinicalRecordDialog('${p.id}')">Editar resumen</button></div>${(clinicalRecord.allergies || []).length ? `<div class="clinical-allergy-alert"><strong>⚠ Alergias</strong><span>${escapeHtml(clinicalRecord.allergies.join(" · "))}</span></div>` : `<div class="clinical-no-allergies">Sin alergias registradas</div>`}${latestVitalsVisit ? `<div class="latest-vitals"><div><small>Presión</small><strong>${escapeHtml(latestVitalsVisit.vitals.bloodPressure || "—")}</strong></div><div><small>Pulso</small><strong>${escapeHtml(latestVitalsVisit.vitals.pulse || "—")}</strong></div><div><small>Temperatura</small><strong>${latestVitalsVisit.vitals.temperature ? `${escapeHtml(latestVitalsVisit.vitals.temperature)} °F` : "—"}</strong></div><div><small>Peso</small><strong>${latestVitalsVisit.vitals.weight ? `${escapeHtml(latestVitalsVisit.vitals.weight)} lb` : "—"}</strong></div><div><small>SpO₂</small><strong>${latestVitalsVisit.vitals.oxygen ? `${escapeHtml(latestVitalsVisit.vitals.oxygen)}%` : "—"}</strong></div><div><small>Fecha</small><strong>${fmtDate(latestVitalsVisit.date)}</strong></div></div>` : ""}<div class="clinical-summary-grid">${clinicalListCard("Medicamentos activos", clinicalRecord.medications)}${clinicalListCard("Problemas activos", clinicalRecord.conditions)}${clinicalListCard("Cirugías y hospitalizaciones", clinicalRecord.surgeries)}${clinicalListCard("Inmunizaciones", clinicalRecord.immunizations)}<article><h4>Tipo de sangre</h4><p>${escapeHtml(clinicalRecord.bloodType || "No indicado")}</p></article><article><h4>Antecedentes familiares</h4><p>${escapeHtml(clinicalRecord.familyHistory || "No registrados")}</p></article><article><h4>Historia social</h4><p>${escapeHtml(clinicalRecord.socialHistory || "No registrada")}</p></article></div>`;
   const timelineHtml = timeline.length ? `<div class="patient-timeline">${timeline.map((entry) => `<div class="timeline-event"><span>${activityIcons[entry.entityType] || "•"}</span><div><strong>${escapeHtml(entry.title)}</strong><p>${escapeHtml(entry.detail || "")}</p><small>${new Date(entry.createdAt).toLocaleString("es-US")}${entry.userEmail ? ` · ${escapeHtml(entry.userEmail)}` : ""}</small></div></div>`).join("")}</div>` : `<div class="empty">No hay actividad registrada.</div>`;
-  $("#patientRecordContent").innerHTML = { summary, visits: visitHtml, documents: documentHtml, payments: paymentHtml, alerts: alertHtml, communications: communicationHtml, timeline: timelineHtml }[activePatientRecordTab] || summary;
+  $("#patientRecordContent").innerHTML = { summary, visits: visitHtml, documents: documentHtml, payments: paymentHtml, clinical: clinicalHtml, alerts: alertHtml, communications: communicationHtml, timeline: timelineHtml }[activePatientRecordTab] || summary;
+}
+
+function clinicalListCard(title, items = []) {
+  return `<article><h4>${escapeHtml(title)}</h4>${items?.length ? `<ul>${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>` : `<p>No registrado</p>`}</article>`;
+}
+
+function linesFromText(value) {
+  return String(value || "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+}
+
+function openClinicalRecordDialog(patientId) {
+  const p = patient(patientId); if (!p) return;
+  const record = state.clinicalRecords.find((entry) => entry.id === patientId || entry.patientId === patientId) || {};
+  $("#clinicalRecordPatientId").value = patientId; $("#clinicalRecordPatientName").textContent = p.name;
+  $("#clinicalBloodType").value = record.bloodType || ""; $("#clinicalAllergies").value = (record.allergies || []).join("\n"); $("#clinicalMedications").value = (record.medications || []).join("\n"); $("#clinicalConditions").value = (record.conditions || []).join("\n"); $("#clinicalSurgeries").value = (record.surgeries || []).join("\n"); $("#clinicalFamilyHistory").value = record.familyHistory || ""; $("#clinicalSocialHistory").value = record.socialHistory || ""; $("#clinicalImmunizations").value = (record.immunizations || []).join("\n");
+  $("#clinicalRecordDialog").showModal();
+}
+
+async function saveClinicalRecord() {
+  const patientId = $("#clinicalRecordPatientId").value;
+  const existing = state.clinicalRecords.find((entry) => entry.id === patientId || entry.patientId === patientId);
+  const data = { id: patientId, patientId, bloodType: $("#clinicalBloodType").value, allergies: linesFromText($("#clinicalAllergies").value), medications: linesFromText($("#clinicalMedications").value), conditions: linesFromText($("#clinicalConditions").value), surgeries: linesFromText($("#clinicalSurgeries").value), familyHistory: $("#clinicalFamilyHistory").value.trim(), socialHistory: $("#clinicalSocialHistory").value.trim(), immunizations: linesFromText($("#clinicalImmunizations").value), createdAt: existing?.createdAt || new Date().toISOString(), updatedAt: new Date().toISOString(), updatedBy: auth.currentUser.uid };
+  await getCollectionRef("clinicalRecords").doc(patientId).set(data, { merge: true });
+  recordActivity({ action: existing ? "updated" : "created", entityType: "clinical", entityId: patientId, patientId, title: "Resumen clínico actualizado", detail: `${data.allergies.length} alergia(s) · ${data.medications.length} medicamento(s) activo(s)` }).catch(console.error);
+  $("#clinicalRecordDialog").close(); toast("Resumen clínico guardado.");
 }
 
 function selectPatientRecordTab(tabName) {
@@ -1827,7 +1865,7 @@ async function updateTeamMember(memberId, changes) {
   } catch (error) { console.error(error); toast("No se pudieron actualizar los permisos."); }
 }
 
-const activityIcons = { patient: "●", visit: "◆", appointment: "▦", payment: "$", document: "▤", signature: "✍", task: "✓", alert: "📌", form: "☷", communication: "☎", system: "•" };
+const activityIcons = { patient: "●", visit: "◆", appointment: "▦", payment: "$", document: "▤", signature: "✍", task: "✓", alert: "📌", form: "☷", communication: "☎", clinical: "✚", system: "•" };
 function renderAuditLogPreview() {
   const box = $("#auditLogPreview"); if (!box) return;
   const rows = state.activities.slice(0, 20);
@@ -2168,6 +2206,18 @@ function openVisitDialog(visit = null) {
   toggleVisitInsuranceFields();
   $("#visitReason").value = visit?.reason || "";
   $("#visitNotes").value = visit?.notes || "";
+  $("#visitBloodPressure").value = visit?.vitals?.bloodPressure || "";
+  $("#visitPulse").value = visit?.vitals?.pulse || "";
+  $("#visitTemperature").value = visit?.vitals?.temperature || "";
+  $("#visitWeight").value = visit?.vitals?.weight || "";
+  $("#visitHeight").value = visit?.vitals?.height || "";
+  $("#visitOxygen").value = visit?.vitals?.oxygen || "";
+  $("#visitSubjective").value = visit?.soap?.subjective || "";
+  $("#visitObjective").value = visit?.soap?.objective || "";
+  $("#visitAssessment").value = visit?.soap?.assessment || "";
+  $("#visitPlan").value = visit?.soap?.plan || "";
+  $("#visitDiagnoses").value = (visit?.diagnoses || []).join("\n");
+  $("#visitPrescriptions").value = (visit?.prescriptions || []).join("\n");
   renderVisitPaymentPanel(visit);
   renderVisitDocuments(visit?.documents || []);
   renderVisitPatientBanner();
@@ -2179,6 +2229,7 @@ function openVisitDialog(visit = null) {
 
 function renderVisitPatientBanner() {
   const p = patient($("#visitPatient").value);
+  const clinicalRecord = p ? state.clinicalRecords.find((entry) => entry.id === p.id || entry.patientId === p.id) : null;
   const banner = $("#visitPatientBanner");
   if (!p) {
     banner.innerHTML = `<div class="patient-avatar">?</div><div><small>Paciente</small><strong>Selecciona un paciente</strong></div>`;
@@ -2191,6 +2242,7 @@ function renderVisitPatientBanner() {
     <div><small>Edad</small><strong>${escapeHtml(p.age || "—")}</strong></div>
     <div><small>Teléfono</small><strong>${escapeHtml(p.phone || "—")}</strong></div>
     <div><small>Seguro</small><strong>${escapeHtml(p.insuranceCompany || (p.payerType === "insurance" ? "Registrado" : "Pago propio"))}</strong></div>
+    ${clinicalRecord?.allergies?.length ? `<div class="patient-banner-clinical-alert"><small>⚠ Alergias</small><strong>${escapeHtml(clinicalRecord.allergies.join(" · "))}</strong></div>` : ""}
     ${patientHasAlert(p) ? `<div class="patient-banner-alert"><span>📌</span><div><strong>${escapeHtml(p.patientAlertMessage)}</strong><small>${patientAlertDateLabel(p)}</small></div><button type="button" onclick="resolvePatientAlert('${p.id}')">Marcar resuelta</button></div>` : ""}`;
 }
 
@@ -2403,6 +2455,7 @@ window.openTaskDialog = openTaskDialog; window.toggleTask = toggleTask; window.d
 window.openFormTemplateDialog = openFormTemplateDialog; window.deleteFormTemplate = deleteFormTemplate;
 window.assignDigitalForm = assignDigitalForm; window.createPatientFormResponse = createPatientFormResponse; window.openPatientDigitalForm = openPatientDigitalForm;
 window.openCommunicationDialog = openCommunicationDialog;
+window.openClinicalRecordDialog = openClinicalRecordDialog;
 
 // El expediente de consulta vive dentro del área principal, no como ventana emergente.
 $(".main").appendChild($("#visitDialog"));
@@ -2647,6 +2700,10 @@ $("#visitForm").addEventListener("submit", async (event) => {
     reminderEnabled: $("#visitReminderEnabled").checked,
     reason: $("#visitReason").value.trim(),
     notes: $("#visitNotes").value.trim(),
+    vitals: { bloodPressure: $("#visitBloodPressure").value.trim(), pulse: $("#visitPulse").value, temperature: $("#visitTemperature").value, weight: $("#visitWeight").value, height: $("#visitHeight").value, oxygen: $("#visitOxygen").value },
+    soap: { subjective: $("#visitSubjective").value.trim(), objective: $("#visitObjective").value.trim(), assessment: $("#visitAssessment").value.trim(), plan: $("#visitPlan").value.trim() },
+    diagnoses: linesFromText($("#visitDiagnoses").value),
+    prescriptions: linesFromText($("#visitPrescriptions").value),
     lineItems,
     invoiceNumber: existingVisit?.invoiceNumber || `${state.settings.invoicePrefix || "FAC"}-${recordId.slice(0, 8).toUpperCase()}`,
     total,
@@ -2780,6 +2837,7 @@ $("#addFormQuestionBtn").addEventListener("click", () => addFormQuestionRow());
 $("#formTemplateForm").addEventListener("submit", async (event) => { event.preventDefault(); try { await saveFormTemplateFromDialog(); } catch (error) { console.error(error); toast("No se pudo guardar la plantilla."); } });
 $("#patientDigitalForm").addEventListener("submit", async (event) => { event.preventDefault(); try { await savePatientDigitalForm(); } catch (error) { console.error(error); toast("No se pudieron guardar las respuestas."); } });
 $("#communicationForm").addEventListener("submit", async (event) => { event.preventDefault(); try { await saveCommunication(); } catch (error) { console.error(error); toast("No se pudo registrar la comunicación."); } });
+$("#clinicalRecordForm").addEventListener("submit", async (event) => { event.preventDefault(); try { await saveClinicalRecord(); } catch (error) { console.error(error); toast("No se pudo guardar el resumen clínico."); } });
 
 ["clinicName", "invoicePrefix", "invoiceAccentColor", "invoiceLogoPosition", "invoiceFooter"].forEach((id) => {
   document.getElementById(id).addEventListener("input", renderInvoiceStylePreview);

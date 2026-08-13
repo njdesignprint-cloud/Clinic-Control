@@ -344,6 +344,7 @@
             <button type="button" data-patient-record-tab="visits">Consultas</button>
             <button type="button" data-patient-record-tab="documents">Documentos</button>
             <button type="button" data-patient-record-tab="payments">Pagos</button>
+            <button type="button" data-patient-record-tab="clinical">Clínico</button>
             <button type="button" data-patient-record-tab="alerts">Alertas</button>
             <button type="button" data-patient-record-tab="communications">Comunicaciones</button>
             <button type="button" data-patient-record-tab="timeline">Línea de tiempo</button>
@@ -752,10 +753,19 @@
         </label>
         </div>
 
-        <div class="form-section-title section-spaced"><span>4</span><div><strong>Pagos posteriores</strong><small>Registra abonos recibidos después de la fecha de la consulta</small></div></div>
+        <div class="form-section-title section-spaced"><span>4</span><div><strong>Nota clínica y signos vitales</strong><small>Documenta la evaluación con estructura SOAP</small></div></div>
+        <div class="clinical-note-block full">
+          <div class="vitals-grid">
+            <label>Presión arterial<input id="visitBloodPressure" placeholder="120/80" /></label><label>Pulso<input id="visitPulse" type="number" min="0" placeholder="72" /></label><label>Temperatura °F<input id="visitTemperature" type="number" step="0.1" placeholder="98.6" /></label><label>Peso lb<input id="visitWeight" type="number" step="0.1" placeholder="150" /></label><label>Estatura in<input id="visitHeight" type="number" step="0.1" placeholder="65" /></label><label>SpO₂ %<input id="visitOxygen" type="number" min="0" max="100" placeholder="98" /></label>
+          </div>
+          <div class="soap-grid"><label><strong>S · Subjetivo</strong><textarea id="visitSubjective" rows="3" placeholder="Síntomas e historia referida por el paciente"></textarea></label><label><strong>O · Objetivo</strong><textarea id="visitObjective" rows="3" placeholder="Hallazgos de examen y observaciones"></textarea></label><label><strong>A · Evaluación</strong><textarea id="visitAssessment" rows="3" placeholder="Evaluación clínica y diagnósticos"></textarea></label><label><strong>P · Plan</strong><textarea id="visitPlan" rows="3" placeholder="Tratamiento, pruebas y seguimiento"></textarea></label></div>
+          <div class="form-grid"><label class="field-group full">Diagnósticos <textarea id="visitDiagnoses" rows="2" placeholder="Uno por línea; puede incluir código ICD-10"></textarea></label><label class="field-group full">Prescripciones e indicaciones <textarea id="visitPrescriptions" rows="2" placeholder="Medicamento, dosis, frecuencia y duración"></textarea></label></div>
+        </div>
+
+        <div class="form-section-title section-spaced"><span>5</span><div><strong>Pagos posteriores</strong><small>Registra abonos recibidos después de la fecha de la consulta</small></div></div>
         <div id="visitPaymentPanel" class="visit-payment-panel full"></div>
 
-        <div class="form-section-title section-spaced"><span>5</span><div><strong>Documentos para firmar</strong><small>Selecciona los documentos que deberá firmar el paciente</small></div></div>
+        <div class="form-section-title section-spaced"><span>6</span><div><strong>Documentos para firmar</strong><small>Selecciona los documentos que deberá firmar el paciente</small></div></div>
         <div id="visitDocuments" class="visit-documents full"></div>
       </div>
 
@@ -908,6 +918,23 @@
         <label class="field-group">Seguimiento opcional<input id="communicationFollowUp" type="datetime-local" /></label>
       </div></div>
       <div class="modal-actions"><button type="button" class="btn light" data-close="communicationDialog">Cancelar</button><button type="submit" class="btn primary">Registrar comunicación</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="clinicalRecordDialog">
+    <form id="clinicalRecordForm" class="modal wide-modal" method="dialog">
+      <div class="modal-head"><div><small>Resumen clínico longitudinal</small><h3 id="clinicalRecordPatientName">Expediente clínico</h3></div><button type="button" class="close-btn" data-close="clinicalRecordDialog">×</button></div>
+      <div class="modal-body"><input id="clinicalRecordPatientId" type="hidden" /><div class="form-grid">
+        <label class="field-group">Tipo de sangre<select id="clinicalBloodType"><option value="">No indicado</option><option>A+</option><option>A-</option><option>B+</option><option>B-</option><option>AB+</option><option>AB-</option><option>O+</option><option>O-</option></select></label>
+        <label class="field-group full">Alergias<textarea id="clinicalAllergies" rows="3" placeholder="Una por línea; incluye reacción si se conoce"></textarea></label>
+        <label class="field-group full">Medicamentos activos<textarea id="clinicalMedications" rows="3" placeholder="Medicamento, dosis y frecuencia; uno por línea"></textarea></label>
+        <label class="field-group full">Problemas y diagnósticos activos<textarea id="clinicalConditions" rows="3" placeholder="Uno por línea"></textarea></label>
+        <label class="field-group full">Cirugías y hospitalizaciones<textarea id="clinicalSurgeries" rows="3" placeholder="Procedimiento y fecha aproximada"></textarea></label>
+        <label class="field-group full">Antecedentes familiares<textarea id="clinicalFamilyHistory" rows="3"></textarea></label>
+        <label class="field-group full">Historia social<textarea id="clinicalSocialHistory" rows="3" placeholder="Tabaco, alcohol, ocupación, vivienda u otros factores"></textarea></label>
+        <label class="field-group full">Inmunizaciones<textarea id="clinicalImmunizations" rows="3" placeholder="Vacuna y fecha; una por línea"></textarea></label>
+      </div></div>
+      <div class="modal-actions"><button type="button" class="btn light" data-close="clinicalRecordDialog">Cancelar</button><button type="submit" class="btn primary">Guardar resumen clínico</button></div>
     </form>
   </dialog>
 
