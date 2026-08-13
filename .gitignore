@@ -6,3 +6,4 @@ serviceAccount*.json
 .env
 .env.*
 !.env.example
+firebase-debug.log
