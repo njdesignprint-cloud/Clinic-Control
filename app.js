@@ -51,7 +51,11 @@ function buildSeedState() {
     patients: [],
     visits: [],
     appointments: [],
-    payments: []
+    payments: [],
+    documents: [],
+    tasks: [],
+    activities: [],
+    teamMembers: []
   };
 }
 
@@ -77,7 +81,11 @@ function normalizeState(saved) {
     patients: Array.isArray(saved?.patients) ? saved.patients : seed.patients,
     visits: Array.isArray(saved?.visits) ? saved.visits : seed.visits,
     appointments: Array.isArray(saved?.appointments) ? saved.appointments : seed.appointments,
-    payments: Array.isArray(saved?.payments) ? saved.payments : seed.payments
+    payments: Array.isArray(saved?.payments) ? saved.payments : seed.payments,
+    documents: Array.isArray(saved?.documents) ? saved.documents : seed.documents,
+    tasks: Array.isArray(saved?.tasks) ? saved.tasks : seed.tasks,
+    activities: Array.isArray(saved?.activities) ? saved.activities : seed.activities,
+    teamMembers: Array.isArray(saved?.teamMembers) ? saved.teamMembers : seed.teamMembers
   };
 }
 
@@ -2755,7 +2763,8 @@ async function handleAuthState(user) {
     } catch (error) {
       console.error(error);
       toast(error.message || "No se pudo cargar datos de la clínica.");
-      await auth.signOut();
+      if (String(error.message || "").includes("desactivada")) await auth.signOut();
+      else showAppScreen();
     }
   } else {
     activeClinicId = null;
