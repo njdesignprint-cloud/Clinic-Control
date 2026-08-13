@@ -142,7 +142,7 @@ async function loadPortalSession(code) {
   return { ref, session };
 }
 
-exports.patientPortal = onRequest({ region: "us-central1", cors: false, timeoutSeconds: 30 }, async (request, response) => {
+exports.patientPortal = onRequest({ region: "us-central1", cors: false, timeoutSeconds: 30, invoker: "public" }, async (request, response) => {
   portalCors(response);
   if (request.method === "OPTIONS") return response.status(204).send("");
   if (request.method !== "POST") return response.status(405).json({ error: "method-not-allowed" });
