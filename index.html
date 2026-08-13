@@ -161,6 +161,11 @@
     </aside>
 
     <main class="main">
+      <div class="pilot-banner" role="status">
+        <span>PRUEBA PILOTO</span>
+        <strong>Usa únicamente datos ficticios.</strong>
+        <small>No ingreses información real de pacientes durante esta etapa.</small>
+      </div>
       <header class="topbar">
         <div>
           <small class="eyebrow">Panel administrativo</small>
@@ -219,6 +224,22 @@
             <small id="kpiBalanceHint">Por cobrar</small>
           </article>
         </div>
+
+        <article class="card pilot-validation-card">
+          <div class="card-head">
+            <div>
+              <span class="pilot-kicker">Validación de la clínica</span>
+              <h3>5 pruebas para aprobar el piloto</h3>
+              <p>Completa cada flujo con pacientes ficticios y marca el resultado.</p>
+            </div>
+            <div class="pilot-progress"><strong id="pilotProgressCount">0/5</strong><span>aprobadas</span></div>
+          </div>
+          <div id="pilotValidationGrid" class="pilot-validation-grid"></div>
+          <div class="pilot-validation-footer">
+            <small id="pilotLastValidated">Todavía no se ha completado ninguna prueba.</small>
+            <button class="btn light" id="pilotResetBtn" type="button">Reiniciar validación</button>
+          </div>
+        </article>
 
         <div class="dashboard-grid">
           <article class="card span-2">
