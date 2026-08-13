@@ -1,4 +1,4 @@
-let state = { settings: {}, patients: [], visits: [], appointments: [], payments: [], documents: [], tasks: [], activities: [], teamMembers: [], formTemplates: [], formResponses: [], communications: [], clinicalRecords: [], leads: [], campaigns: [] };
+let state = { settings: {}, patients: [], visits: [], appointments: [], payments: [], documents: [], tasks: [], activities: [], teamMembers: [], formTemplates: [], formResponses: [], communications: [], clinicalRecords: [], leads: [], campaigns: [], waitlist: [] };
 let firestore = null;
 let auth = null;
 let storage = null;
@@ -19,6 +19,7 @@ let unsubscribeCommunications = null;
 let unsubscribeClinicalRecords = null;
 let unsubscribeLeads = null;
 let unsubscribeCampaigns = null;
+let unsubscribeWaitlist = null;
 let activeInvoiceId = null;
 let activeBillingTab = "all";
 let activeFinancePatientId = null;
@@ -31,6 +32,7 @@ let signatureHasInk = false;
 let appointmentView = localStorage.getItem("clinicAppointmentView") || "day";
 let currentBillingRows = [];
 let activePatientFormResponseId = null;
+let activeWaitlistId = null;
 
 function uid() {
   if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
@@ -68,7 +70,8 @@ function buildSeedState() {
     communications: [],
     clinicalRecords: [],
     leads: [],
-    campaigns: []
+    campaigns: [],
+    waitlist: []
   };
 }
 
@@ -104,7 +107,8 @@ function normalizeState(saved) {
     communications: Array.isArray(saved?.communications) ? saved.communications : seed.communications,
     clinicalRecords: Array.isArray(saved?.clinicalRecords) ? saved.clinicalRecords : seed.clinicalRecords,
     leads: Array.isArray(saved?.leads) ? saved.leads : seed.leads,
-    campaigns: Array.isArray(saved?.campaigns) ? saved.campaigns : seed.campaigns
+    campaigns: Array.isArray(saved?.campaigns) ? saved.campaigns : seed.campaigns,
+    waitlist: Array.isArray(saved?.waitlist) ? saved.waitlist : seed.waitlist
   };
 }
 
@@ -194,6 +198,7 @@ function unsubscribeAll() {
   if (unsubscribeClinicalRecords) unsubscribeClinicalRecords();
   if (unsubscribeLeads) unsubscribeLeads();
   if (unsubscribeCampaigns) unsubscribeCampaigns();
+  if (unsubscribeWaitlist) unsubscribeWaitlist();
   unsubscribeSettings = null;
   unsubscribePatients = null;
   unsubscribeVisits = null;
@@ -209,6 +214,7 @@ function unsubscribeAll() {
   unsubscribeClinicalRecords = null;
   unsubscribeLeads = null;
   unsubscribeCampaigns = null;
+  unsubscribeWaitlist = null;
 }
 
 function showAuthScreen() {
@@ -223,7 +229,7 @@ function showAppScreen() {
 }
 
 function clearState() {
-  state = { settings: {}, patients: [], visits: [], appointments: [], payments: [], documents: [], tasks: [], activities: [], teamMembers: [], formTemplates: [], formResponses: [], communications: [], clinicalRecords: [], leads: [], campaigns: [] };
+  state = { settings: {}, patients: [], visits: [], appointments: [], payments: [], documents: [], tasks: [], activities: [], teamMembers: [], formTemplates: [], formResponses: [], communications: [], clinicalRecords: [], leads: [], campaigns: [], waitlist: [] };
   render();
 }
 
@@ -245,6 +251,7 @@ function subscribeToRealtime() {
   const clinicalRecordsRef = getCollectionRef("clinicalRecords");
   const leadsRef = getCollectionRef("leads");
   const campaignsRef = getCollectionRef("campaigns");
+  const waitlistRef = getCollectionRef("waitlist");
 
   unsubscribeSettings = settingsRef.onSnapshot((doc) => {
     if (doc.exists) {
@@ -313,6 +320,9 @@ function subscribeToRealtime() {
   });
   if (["admin", "reception"].includes(currentAccess.role)) unsubscribeCampaigns = campaignsRef.onSnapshot((snapshot) => {
     state.campaigns = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })); renderCrm();
+  });
+  if (["admin", "reception", "clinical"].includes(currentAccess.role)) unsubscribeWaitlist = waitlistRef.onSnapshot((snapshot) => {
+    state.waitlist = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })); renderWaitlist();
   });
 }
 
@@ -1113,7 +1123,8 @@ function appointmentCardContent(item, compact = false) {
 
 function renderDayCalendar(rows, dateValue) {
   const active = rows.filter((item) => !["cancelled", "no_show"].includes(item.status));
-  const hours = Array.from({ length: 14 }, (_, index) => index + 7);
+  const openHour = Number((state.settings.scheduleOpenTime || "08:00").split(":")[0]); const closeHour = Number((state.settings.scheduleCloseTime || "18:00").split(":")[0]);
+  const hours = Array.from({ length: Math.max(1, closeHour - openHour + 1) }, (_, index) => index + openHour);
   return `<div class="day-calendar"><div class="calendar-day-title"><strong>${new Date(`${dateValue}T12:00:00`).toLocaleDateString("es-US", { weekday: "long", day: "numeric", month: "long" })}</strong><span>${active.length} cita(s) activa(s)</span></div>${hours.map((hour) => {
     const slots = [0, 30].map((minute) => {
       const slotItems = rows.filter((item) => { const date = new Date(item.date); return date.getHours() === hour && date.getMinutes() >= minute && date.getMinutes() < minute + 30; });
@@ -1149,7 +1160,7 @@ function renderAppointments() {
   const allDay = state.appointments.filter((item) => String(item.date || "").slice(0, 10) === dateValue);
   const countBy = (status) => allDay.filter((item) => item.status === status).length;
   $("#appointmentSummary").innerHTML = `
-    <div><strong>${allDay.length}</strong><span>Total</span></div><div><strong>${countBy("confirmed")}</strong><span>Confirmadas</span></div><div><strong>${countBy("arrived")}</strong><span>En espera</span></div><div><strong>${countBy("completed")}</strong><span>Atendidas</span></div>`;
+    <div><strong>${allDay.length}</strong><span>Total</span></div><div><strong>${countBy("confirmed")}</strong><span>Confirmadas</span></div><div><strong>${countBy("arrived")}</strong><span>En espera</span></div><div><strong>${countBy("completed")}</strong><span>Atendidas</span></div><div><strong>${state.waitlist.filter((entry) => entry.status !== "scheduled").length}</strong><span>Lista de espera</span></div>`;
   if (appointmentView === "day") agenda.innerHTML = renderDayCalendar(dayRows, dateValue);
   else if (appointmentView === "week") agenda.innerHTML = renderWeekCalendar(filteredRows, dateValue);
   else agenda.innerHTML = dayRows.length ? dayRows.map((item) => appointmentCardContent(item)).join("") : `<div class="empty agenda-empty"><strong>Agenda libre</strong><span>No hay citas para esta fecha y filtros.</span><button class="btn primary" onclick="openAppointmentDialog()">Crear una cita</button></div>`;
@@ -1887,6 +1898,11 @@ function renderSettings() {
   $("#invoiceShowEmail").checked = state.settings.invoiceShowEmail !== false;
   $("#invoiceShowDoctor").checked = state.settings.invoiceShowDoctor !== false;
   $("#invoiceShowInsurance").checked = state.settings.invoiceShowInsurance !== false;
+  $("#scheduleOpenTime").value = state.settings.scheduleOpenTime || "08:00";
+  $("#scheduleCloseTime").value = state.settings.scheduleCloseTime || "18:00";
+  $("#scheduleBuffer").value = String(state.settings.scheduleBuffer || 0);
+  const scheduleDays = state.settings.scheduleDays || [1, 2, 3, 4, 5];
+  $$('[data-schedule-day]').forEach((input) => { input.checked = scheduleDays.includes(Number(input.dataset.scheduleDay)); });
   $("#clinicLogoPreview").innerHTML = state.settings.clinicLogo
     ? `<img src="${state.settings.clinicLogo}" alt="Logo de la clínica" />`
     : `<span>Sin logo</span>`;
@@ -2122,6 +2138,11 @@ function openAppointmentDialog(item = null) {
   $("#appointmentReason").value = item?.reason || "";
   $("#appointmentReminder").checked = item ? Boolean(item.reminderEnabled) : true;
   $("#appointmentNotes").value = item?.notes || "";
+  $("#appointmentRecurrence").value = "none";
+  $("#appointmentRecurrenceCount").value = "4";
+  $("#appointmentRecurrence").disabled = Boolean(item?.id);
+  $("#appointmentRecurrenceCount").disabled = Boolean(item?.id);
+  activeWaitlistId = item?.waitlistId || null;
   $("#appointmentDialog").showModal();
   requestAnimationFrame(() => $("#appointmentPatient").focus());
 }
@@ -2163,17 +2184,59 @@ async function cancelAppointment(id) {
 
 function findAppointmentConflict(candidate) {
   const candidateStart = new Date(candidate.date).getTime();
-  const candidateEnd = candidateStart + candidate.duration * 60000;
+  const bufferMs = Number(state.settings.scheduleBuffer || 0) * 60000;
+  const candidateEnd = candidateStart + candidate.duration * 60000 + bufferMs;
   return state.appointments.find((item) => {
     if (item.id === candidate.id || ["cancelled", "no_show"].includes(item.status)) return false;
     const itemStart = new Date(item.date).getTime();
-    const itemEnd = itemStart + Number(item.duration || 30) * 60000;
+    const itemEnd = itemStart + Number(item.duration || 30) * 60000 + bufferMs;
     const overlaps = candidateStart < itemEnd && candidateEnd > itemStart;
     if (!overlaps) return false;
     const samePatient = item.patientId === candidate.patientId;
     const sameDoctor = candidate.doctor && item.doctor && candidate.doctor.toLowerCase() === item.doctor.toLowerCase();
     return samePatient || sameDoctor;
   });
+}
+
+function appointmentAvailabilityError(candidate) {
+  const date = new Date(candidate.date); const allowedDays = state.settings.scheduleDays || [1, 2, 3, 4, 5];
+  if (!allowedDays.includes(date.getDay())) return "La clínica no tiene disponibilidad configurada para ese día.";
+  const startMinutes = date.getHours() * 60 + date.getMinutes(); const [openHour, openMinute] = (state.settings.scheduleOpenTime || "08:00").split(":").map(Number); const [closeHour, closeMinute] = (state.settings.scheduleCloseTime || "18:00").split(":").map(Number); const open = openHour * 60 + openMinute; const close = closeHour * 60 + closeMinute;
+  if (startMinutes < open || startMinutes + Number(candidate.duration || 30) > close) return `La cita debe estar entre ${state.settings.scheduleOpenTime || "08:00"} y ${state.settings.scheduleCloseTime || "18:00"}.`;
+  return "";
+}
+
+function recurringAppointmentDates(startValue, recurrence, count) {
+  const start = new Date(startValue); const dates = [];
+  for (let index = 0; index < count; index += 1) { const date = new Date(start); if (recurrence === "weekly") date.setDate(start.getDate() + index * 7); if (recurrence === "biweekly") date.setDate(start.getDate() + index * 14); if (recurrence === "monthly") date.setMonth(start.getMonth() + index); dates.push(localDateTimeValue(date)); }
+  return dates;
+}
+
+function localDateTimeValue(date) {
+  const offset = date.getTimezoneOffset() * 60000; return new Date(date.getTime() - offset).toISOString().slice(0, 16);
+}
+
+function renderWaitlist() {
+  const box = $("#waitlistList"); if (!box) return;
+  const rows = state.waitlist.filter((entry) => entry.status !== "scheduled").sort((a, b) => new Date(a.dateFrom) - new Date(b.dateFrom));
+  box.innerHTML = rows.length ? rows.map((entry) => { const p = patient(entry.patientId); return `<article><div><strong>${escapeHtml(p?.name || "Paciente")}</strong><small>${escapeHtml(entry.notes || "Sin notas")} · Desde ${entry.dateFrom}${entry.dateTo ? ` hasta ${entry.dateTo}` : ""}</small></div><span class="badge blue">${entry.timePreference === "morning" ? "Mañana" : entry.timePreference === "afternoon" ? "Tarde" : "Cualquier hora"}</span><button class="btn primary" onclick="bookWaitlist('${entry.id}')">Programar</button><button class="icon-btn" onclick="removeWaitlist('${entry.id}')">⌫</button></article>`; }).join("") : `<div class="empty">La lista de espera está vacía.</div>`;
+}
+
+function openWaitlistDialog() {
+  renderVisitOptions(); $("#waitlistPatient").innerHTML = state.patients.map((p) => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join(""); $("#waitlistId").value = ""; $("#waitlistDateFrom").value = localDateValue(); $("#waitlistDateTo").value = ""; $("#waitlistTimePreference").value = "any"; $("#waitlistDoctor").value = $("#appointmentDoctorFilter").value || ""; $("#waitlistNotes").value = ""; $("#waitlistDialog").showModal();
+}
+
+async function saveWaitlist() {
+  const id = $("#waitlistId").value || uid(); const data = { id, patientId: $("#waitlistPatient").value, dateFrom: $("#waitlistDateFrom").value, dateTo: $("#waitlistDateTo").value, timePreference: $("#waitlistTimePreference").value, doctor: $("#waitlistDoctor").value.trim(), notes: $("#waitlistNotes").value.trim(), status: "waiting", createdAt: new Date().toISOString(), createdBy: auth.currentUser.uid };
+  await getCollectionRef("waitlist").doc(id).set(data, { merge: true }); recordActivity({ action: "created", entityType: "appointment", entityId: id, patientId: data.patientId, title: "Paciente agregado a lista de espera", detail: data.notes || data.dateFrom }).catch(console.error); $("#waitlistDialog").close(); toast("Paciente agregado a la lista de espera.");
+}
+
+function bookWaitlist(id) {
+  const entry = state.waitlist.find((item) => item.id === id); if (!entry) return; activeWaitlistId = id; openAppointmentDialog(); activeWaitlistId = id; $("#appointmentPatient").value = entry.patientId; $("#appointmentDoctor").value = entry.doctor || ""; $("#appointmentReason").value = entry.notes || "Cita desde lista de espera"; const hour = entry.timePreference === "afternoon" ? "13:00" : "09:00"; $("#appointmentDate").value = `${entry.dateFrom || localDateValue()}T${hour}`;
+}
+
+async function removeWaitlist(id) {
+  if (!confirm("¿Quitar este paciente de la lista de espera?")) return; await getCollectionRef("waitlist").doc(id).delete(); toast("Paciente retirado de la lista.");
 }
 
 async function setAppointmentStatus(id, status) {
@@ -2542,6 +2605,7 @@ window.assignDigitalForm = assignDigitalForm; window.createPatientFormResponse =
 window.openCommunicationDialog = openCommunicationDialog;
 window.openClinicalRecordDialog = openClinicalRecordDialog;
 window.openLeadDialog = openLeadDialog; window.moveLead = moveLead; window.convertLead = convertLead; window.openCampaignDialog = openCampaignDialog;
+window.bookWaitlist = bookWaitlist; window.removeWaitlist = removeWaitlist;
 
 // El expediente de consulta vive dentro del área principal, no como ventana emergente.
 $(".main").appendChild($("#visitDialog"));
@@ -2568,6 +2632,7 @@ $("#quickPatientBtn").addEventListener("click", () => openPatientDialog());
 $("#dashNewPatient").addEventListener("click", () => openPatientDialog());
 $("#patientCreateBtn").addEventListener("click", () => openPatientDialog());
 $("#appointmentCreateBtn").addEventListener("click", () => openAppointmentDialog());
+$("#waitlistCreateBtn").addEventListener("click", openWaitlistDialog);
 $("#taskCreateBtn").addEventListener("click", () => openTaskDialog());
 $("#taskSearch").addEventListener("input", renderTasks); $("#taskStatusFilter").addEventListener("change", renderTasks); $("#taskTypeFilter").addEventListener("change", renderTasks);
 
@@ -2684,16 +2749,13 @@ $("#appointmentForm").addEventListener("submit", async (event) => {
     notes: $("#appointmentNotes").value.trim(),
     createdAt: existing?.createdAt || new Date().toISOString(),
     updatedAt: new Date().toISOString(),
-    visitId: existing?.visitId || ""
+    visitId: existing?.visitId || "",
+    waitlistId: existing?.waitlistId || activeWaitlistId || ""
   };
   if (!data.patientId || !data.date || data.reason.length < 2) { toast("Completa paciente, fecha y motivo."); return; }
-  const conflict = findAppointmentConflict(data);
-  if (conflict) {
-    const conflictPatient = patient(conflict.patientId);
-    toast(`Horario ocupado por ${conflictPatient?.name || "otra cita"}.`);
-    return;
-  }
-  try { await saveAppointment(data); $("#appointmentDialog").close(); $("#appointmentDateFilter").value = data.date.slice(0, 10); renderAppointments(); toast(existing ? "Cita actualizada" : "Cita programada"); } catch (error) { console.error(error); toast("No se pudo guardar la cita"); }
+  const recurrence = existing ? "none" : $("#appointmentRecurrence").value; const count = recurrence === "none" ? 1 : Number($("#appointmentRecurrenceCount").value || 2); const seriesId = count > 1 ? uid() : ""; const dates = recurringAppointmentDates(data.date, recurrence, count); const candidates = dates.map((date, index) => ({ ...data, id: index === 0 ? data.id : uid(), date, recurrence, seriesId, seriesIndex: index + 1, seriesCount: count }));
+  for (const candidate of candidates) { const availabilityError = appointmentAvailabilityError(candidate); if (availabilityError) { toast(availabilityError); return; } const conflict = findAppointmentConflict(candidate); if (conflict) { const conflictPatient = patient(conflict.patientId); toast(`Conflicto el ${fmtDate(candidate.date)} con ${conflictPatient?.name || "otra cita"}.`); return; } }
+  try { for (const candidate of candidates) await saveAppointment(candidate); if (data.waitlistId) await getCollectionRef("waitlist").doc(data.waitlistId).set({ status: "scheduled", appointmentId: candidates[0].id, scheduledAt: new Date().toISOString() }, { merge: true }); activeWaitlistId = null; $("#appointmentDialog").close(); $("#appointmentDateFilter").value = data.date.slice(0, 10); renderAppointments(); toast(existing ? "Cita actualizada" : count > 1 ? `${count} citas recurrentes programadas` : "Cita programada"); } catch (error) { console.error(error); toast("No se pudo guardar la cita"); }
 });
 
 $("#paymentForm").addEventListener("submit", async (event) => {
@@ -2839,7 +2901,11 @@ $("#settingsForm").addEventListener("submit", async (event) => {
     invoiceShowPhone: $("#invoiceShowPhone").checked,
     invoiceShowEmail: $("#invoiceShowEmail").checked,
     invoiceShowDoctor: $("#invoiceShowDoctor").checked,
-    invoiceShowInsurance: $("#invoiceShowInsurance").checked
+    invoiceShowInsurance: $("#invoiceShowInsurance").checked,
+    scheduleOpenTime: $("#scheduleOpenTime").value || "08:00",
+    scheduleCloseTime: $("#scheduleCloseTime").value || "18:00",
+    scheduleBuffer: Number($("#scheduleBuffer").value || 0),
+    scheduleDays: Array.from($$('[data-schedule-day]:checked')).map((input) => Number(input.dataset.scheduleDay))
   };
 
   try {
@@ -2930,6 +2996,7 @@ $("#leadCreateBtn").addEventListener("click", () => openLeadDialog()); $("#campa
 $("#leadSearch").addEventListener("input", renderCrm); $("#leadSourceFilter").addEventListener("change", renderCrm); $("#leadOwnerFilter").addEventListener("change", renderCrm);
 $("#leadForm").addEventListener("submit", async (event) => { event.preventDefault(); try { await saveLead(); } catch (error) { console.error(error); toast("No se pudo guardar el prospecto."); } });
 $("#campaignForm").addEventListener("submit", async (event) => { event.preventDefault(); try { await saveCampaign(); } catch (error) { console.error(error); toast("No se pudo guardar la campaña."); } });
+$("#waitlistForm").addEventListener("submit", async (event) => { event.preventDefault(); try { await saveWaitlist(); } catch (error) { console.error(error); toast("No se pudo guardar la lista de espera."); } });
 
 ["clinicName", "invoicePrefix", "invoiceAccentColor", "invoiceLogoPosition", "invoiceFooter"].forEach((id) => {
   document.getElementById(id).addEventListener("input", renderInvoiceStylePreview);

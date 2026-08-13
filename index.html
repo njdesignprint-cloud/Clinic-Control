@@ -337,6 +337,7 @@
           <input id="appointmentSearch" type="search" placeholder="Buscar paciente, doctor o motivo..." />
         </div>
         <div id="appointmentAgenda" class="appointment-agenda"></div>
+        <div class="waitlist-section"><div class="patient-record-section-head"><div><h3>Lista de espera</h3><small>Pacientes disponibles para ocupar cancelaciones</small></div><button class="btn light" id="waitlistCreateBtn">+ Agregar</button></div><div id="waitlistList" class="waitlist-list"></div></div>
       </section>
 
       <section class="page patient-record-page" id="patientRecord">
@@ -540,6 +541,10 @@
             <label><input id="invoiceShowInsurance" type="checkbox" /> Mostrar seguro</label>
           </div>
           <div class="invoice-preview full" id="invoiceStylePreview"></div>
+
+          <div class="settings-section-title full section-spaced"><strong>Configuración de agenda</strong><small>Define horarios disponibles y separación entre citas.</small></div>
+          <label>Hora de apertura<input id="scheduleOpenTime" type="time" value="08:00" /></label><label>Hora de cierre<input id="scheduleCloseTime" type="time" value="18:00" /></label><label>Separación entre citas<select id="scheduleBuffer"><option value="0">Sin separación</option><option value="5">5 minutos</option><option value="10">10 minutos</option><option value="15">15 minutos</option></select></label>
+          <div class="schedule-weekdays full"><label><input type="checkbox" data-schedule-day="1" checked /> Lunes</label><label><input type="checkbox" data-schedule-day="2" checked /> Martes</label><label><input type="checkbox" data-schedule-day="3" checked /> Miércoles</label><label><input type="checkbox" data-schedule-day="4" checked /> Jueves</label><label><input type="checkbox" data-schedule-day="5" checked /> Viernes</label><label><input type="checkbox" data-schedule-day="6" /> Sábado</label><label><input type="checkbox" data-schedule-day="0" /> Domingo</label></div>
 
           <div class="settings-section-title full section-spaced"><strong>Equipo y permisos</strong><small>Agrega empleados y controla el acceso según su función.</small></div>
           <div class="team-settings full">
@@ -802,6 +807,7 @@
         <label class="field-group">Profesional<input id="appointmentDoctor" type="text" list="appointmentDoctorOptions" placeholder="Ej. Dra. Ana Martínez" autocomplete="off" /><datalist id="appointmentDoctorOptions"></datalist></label>
         <label class="field-group">Estado<select id="appointmentStatus"><option value="scheduled">Programada</option><option value="confirmed">Confirmada</option><option value="arrived">En espera</option><option value="completed">Atendida</option><option value="cancelled">Cancelada</option><option value="no_show">No asistió</option></select></label>
         <label class="field-group required full"><span class="field-label">Motivo <b>*</b></span><input id="appointmentReason" type="text" placeholder="Motivo principal de la cita" required /></label>
+        <label class="field-group">Repetición<select id="appointmentRecurrence"><option value="none">No repetir</option><option value="weekly">Cada semana</option><option value="biweekly">Cada 2 semanas</option><option value="monthly">Cada mes</option></select></label><label class="field-group">Cantidad<input id="appointmentRecurrenceCount" type="number" min="2" max="24" value="4" /></label>
         <label class="consent-field full"><input id="appointmentReminder" type="checkbox" checked /><span><strong>Enviar recordatorios automáticos</strong><small>Según el consentimiento del paciente: 3 días antes, 2 días antes y 3 horas antes.</small></span></label>
         <label class="field-group full">Notas<textarea id="appointmentNotes" rows="2" placeholder="Indicaciones para recepción o el profesional"></textarea></label>
       </div></div>
@@ -838,6 +844,12 @@
         <label class="field-group full">Descripción<textarea id="taskDescription" rows="3" placeholder="Información necesaria para completar el seguimiento"></textarea></label>
       </div></div>
       <div class="modal-actions"><button type="button" class="btn light" data-close="taskDialog">Cancelar</button><button type="submit" class="btn primary">Guardar tarea</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="waitlistDialog">
+    <form id="waitlistForm" class="modal compact-modal" method="dialog">
+      <div class="modal-head"><div><small>Agenda</small><h3>Lista de espera</h3></div><button type="button" class="close-btn" data-close="waitlistDialog">×</button></div><div class="modal-body"><input id="waitlistId" type="hidden" /><div class="form-grid"><label class="field-group full">Paciente<select id="waitlistPatient" required></select></label><label class="field-group">Desde<input id="waitlistDateFrom" type="date" required /></label><label class="field-group">Hasta<input id="waitlistDateTo" type="date" /></label><label class="field-group">Preferencia<select id="waitlistTimePreference"><option value="any">Cualquier hora</option><option value="morning">Mañana</option><option value="afternoon">Tarde</option></select></label><label class="field-group">Profesional<input id="waitlistDoctor" list="appointmentDoctorOptions" placeholder="Cualquiera" /></label><label class="field-group full">Motivo / notas<textarea id="waitlistNotes" rows="3"></textarea></label></div></div><div class="modal-actions"><button type="button" class="btn light" data-close="waitlistDialog">Cancelar</button><button type="submit" class="btn primary">Guardar en lista</button></div>
     </form>
   </dialog>
 
