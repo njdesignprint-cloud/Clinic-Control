@@ -345,6 +345,7 @@
             <button type="button" data-patient-record-tab="documents">Documentos</button>
             <button type="button" data-patient-record-tab="payments">Pagos</button>
             <button type="button" data-patient-record-tab="alerts">Alertas</button>
+            <button type="button" data-patient-record-tab="communications">Comunicaciones</button>
             <button type="button" data-patient-record-tab="timeline">Línea de tiempo</button>
           </nav>
           <div id="patientRecordContent" class="patient-record-content"></div>
@@ -548,6 +549,11 @@
               <small>PDF, Word, PNG o JPG. Máximo 10 MB por archivo.</small>
             </label>
             <div id="clinicDocumentsList" class="document-library"></div>
+          </div>
+          <div class="settings-section-title full section-spaced"><strong>Formularios digitales</strong><small>Crea cuestionarios reutilizables para admisión, historial, consentimiento y seguimiento.</small></div>
+          <div class="digital-form-settings full">
+            <button class="btn primary" type="button" id="createFormTemplateBtn">+ Nueva plantilla</button>
+            <div id="formTemplatesList" class="form-template-list"></div>
           </div>
           <div class="settings-section-title full section-spaced"><strong>Registro de auditoría</strong><small>Actividad reciente realizada dentro de la clínica.</small></div>
           <div id="auditLogPreview" class="audit-log-preview full"></div>
@@ -868,6 +874,41 @@
         <button type="button" class="btn primary" id="saveSignatureBtn">Guardar firma</button>
       </div>
     </div>
+  </dialog>
+
+  <dialog id="formTemplateDialog">
+    <form id="formTemplateForm" class="modal wide-modal" method="dialog">
+      <div class="modal-head"><div><small>Biblioteca clínica</small><h3>Plantilla de formulario</h3></div><button type="button" class="close-btn" data-close="formTemplateDialog">×</button></div>
+      <div class="modal-body">
+        <input id="formTemplateId" type="hidden" />
+        <div class="form-grid"><label class="field-group">Nombre<input id="formTemplateName" required placeholder="Ej. Historial médico inicial" /></label><label class="field-group">Categoría<select id="formTemplateCategory"><option value="intake">Admisión</option><option value="medical">Historial clínico</option><option value="consent">Consentimiento</option><option value="followup">Seguimiento</option><option value="other">Otro</option></select></label><label class="field-group full">Descripción<textarea id="formTemplateDescription" rows="2"></textarea></label></div>
+        <div class="form-builder-head"><strong>Preguntas</strong><button id="addFormQuestionBtn" type="button" class="btn light">+ Agregar pregunta</button></div>
+        <div id="formQuestionsBuilder" class="form-questions-builder"></div>
+      </div>
+      <div class="modal-actions"><button type="button" class="btn light" data-close="formTemplateDialog">Cancelar</button><button type="submit" class="btn primary">Guardar plantilla</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="patientFormDialog">
+    <form id="patientDigitalForm" class="modal wide-modal" method="dialog">
+      <div class="modal-head"><div><small>Formulario del paciente</small><h3 id="patientFormTitle">Formulario</h3></div><button type="button" class="close-btn" data-close="patientFormDialog">×</button></div>
+      <div id="patientFormBody" class="modal-body digital-form-body"></div>
+      <div class="modal-actions"><button type="button" class="btn light" data-close="patientFormDialog">Cerrar</button><button type="submit" class="btn primary">Guardar respuestas</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="communicationDialog">
+    <form id="communicationForm" class="modal compact-modal" method="dialog">
+      <div class="modal-head"><div><small>Contacto con el paciente</small><h3 id="communicationPatientName">Nueva comunicación</h3></div><button type="button" class="close-btn" data-close="communicationDialog">×</button></div>
+      <div class="modal-body"><input id="communicationPatientId" type="hidden" /><div class="form-grid">
+        <label class="field-group">Canal<select id="communicationChannel"><option value="phone">Llamada</option><option value="email">Correo</option><option value="sms">SMS</option><option value="whatsapp">WhatsApp</option><option value="in_person">En persona</option></select></label>
+        <label class="field-group">Dirección<select id="communicationDirection"><option value="outbound">Saliente</option><option value="inbound">Entrante</option></select></label>
+        <label class="field-group full">Asunto<input id="communicationSubject" required placeholder="Motivo del contacto" /></label>
+        <label class="field-group full">Notas<textarea id="communicationNotes" rows="4" placeholder="Resultado, acuerdo o información importante"></textarea></label>
+        <label class="field-group">Seguimiento opcional<input id="communicationFollowUp" type="datetime-local" /></label>
+      </div></div>
+      <div class="modal-actions"><button type="button" class="btn light" data-close="communicationDialog">Cancelar</button><button type="submit" class="btn primary">Registrar comunicación</button></div>
+    </form>
   </dialog>
 
   <div id="toast"></div>

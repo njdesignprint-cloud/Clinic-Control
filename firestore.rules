@@ -38,7 +38,7 @@ service cloud.firestore {
       allow read, write: if hasRole(clinicId, ['admin', 'reception', 'clinical']);
     }
     match /clinics/{clinicId}/tasks/{document=**} {
-      allow read, write: if hasRole(clinicId, ['admin', 'reception', 'clinical']);
+      allow read, write: if hasRole(clinicId, ['admin', 'reception', 'clinical', 'accounting']);
     }
     match /clinics/{clinicId}/payments/{document=**} {
       allow read, write: if hasRole(clinicId, ['admin', 'accounting']);
@@ -46,6 +46,16 @@ service cloud.firestore {
     match /clinics/{clinicId}/documents/{document=**} {
       allow read: if hasRole(clinicId, ['admin', 'clinical']);
       allow write: if hasRole(clinicId, ['admin']);
+    }
+    match /clinics/{clinicId}/formTemplates/{document=**} {
+      allow read: if hasRole(clinicId, ['admin', 'reception', 'clinical']);
+      allow write: if hasRole(clinicId, ['admin']);
+    }
+    match /clinics/{clinicId}/formResponses/{document=**} {
+      allow read, write: if hasRole(clinicId, ['admin', 'reception', 'clinical']);
+    }
+    match /clinics/{clinicId}/communications/{document=**} {
+      allow read, write: if belongsTo(clinicId);
     }
     match /clinics/{clinicId}/activities/{document=**} {
       allow read: if belongsTo(clinicId);
