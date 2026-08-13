@@ -1694,61 +1694,32 @@ function downloadInvoicePdf(id = activeInvoiceId) {
 }
 
 function renderReports() {
-  const dayVisits = state.visits.filter((visit) => onlyDate(visit.date) === today());
-  const dayTotals = totals(dayVisits);
-  const all = totals();
+  const now = new Date(); const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  if (!$("#reportDateFrom").value) $("#reportDateFrom").value = localDateValue(monthStart);
+  if (!$("#reportDateTo").value) $("#reportDateTo").value = localDateValue(now);
+  const from = $("#reportDateFrom").value; const to = $("#reportDateTo").value; const doctor = $("#reportDoctorFilter").value;
+  const inRange = (value) => { const date = String(value || "").slice(0, 10); return (!from || date >= from) && (!to || date <= to); };
+  const doctors = appointmentDoctors(); const doctorSelect = $("#reportDoctorFilter"); const selectedDoctor = doctorSelect.value; doctorSelect.innerHTML = `<option value="">Todos los profesionales</option>${doctors.map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join("")}`; doctorSelect.value = doctors.includes(selectedDoctor) ? selectedDoctor : "";
+  const visits = state.visits.filter((visit) => inRange(visit.date) && (!doctor || visit.doctor === doctor)); const appointments = state.appointments.filter((item) => inRange(item.date) && (!doctor || item.doctor === doctor)); const financial = totals(visits);
+  const expenses = state.expenses.filter((item) => inRange(item.date)).reduce((sum, item) => sum + Number(item.amount || 0), 0); const receipts = accountingReceipts(from, to); const profit = receipts - expenses;
+  const completedAppointments = appointments.filter((item) => item.status === "completed").length; const noShows = appointments.filter((item) => item.status === "no_show").length; const cancelled = appointments.filter((item) => item.status === "cancelled").length; const attendanceBase = completedAppointments + noShows; const noShowRate = attendanceBase ? noShows / attendanceBase * 100 : 0;
+  const leads = state.leads.filter((lead) => inRange(lead.createdAt)); const converted = leads.filter((lead) => lead.stage === "won").length; const conversion = leads.length ? converted / leads.length * 100 : 0;
+  const newPatients = state.patients.filter((p) => inRange(p.createdAt)).length; const pendingForms = state.formResponses.filter((entry) => entry.status !== "completed").length; const overdueTasks = state.tasks.filter(taskIsOverdue).length;
+  const aging = { "0–30 días": 0, "31–60 días": 0, "61–90 días": 0, "+90 días": 0 }; const todayTime = new Date(`${localDateValue()}T12:00:00`).getTime(); state.visits.forEach((visit) => { const due = balance(visit); if (!due) return; const age = Math.floor((todayTime - new Date(visit.date).getTime()) / 86400000); aging[age <= 30 ? "0–30 días" : age <= 60 ? "31–60 días" : age <= 90 ? "61–90 días" : "+90 días"] += due; });
+  const sourceRows = [...new Set([...leads.map((lead) => lead.source || "Sin fuente"), ...state.patients.filter((p) => inRange(p.createdAt)).map((p) => p.source || "Sin fuente")])].map((source) => { const sourceLeads = leads.filter((lead) => (lead.source || "Sin fuente") === source); const sourceWon = sourceLeads.filter((lead) => lead.stage === "won").length; return { label: source, count: sourceLeads.length, converted: sourceWon, rate: sourceLeads.length ? sourceWon / sourceLeads.length * 100 : 0 }; }).sort((a, b) => b.count - a.count);
+  const providerRows = doctors.map((name) => { const providerVisits = visits.filter((visit) => visit.doctor === name); const providerAppointments = appointments.filter((item) => item.doctor === name); return { name, visits: providerVisits.length, billed: totals(providerVisits).billed, noShows: providerAppointments.filter((item) => item.status === "no_show").length }; }).filter((row) => row.visits || row.noShows).sort((a, b) => b.visits - a.visits);
+  const monthlyRevenue = analyticsMonthlySeries(visits);
+  $("#reportCard").innerHTML = `<div class="analytics-heading"><div><h2>${escapeHtml(state.settings.clinicName || "Clinic Control")}</h2><p>${from} a ${to}${doctor ? ` · ${escapeHtml(doctor)}` : ""}</p></div><small>Generado ${new Date().toLocaleString("es-US")}</small></div><div class="analytics-kpis">${analyticsKpi("Consultas", visits.length, `${newPatients} pacientes nuevos`)}${analyticsKpi("Facturado", money(financial.billed), `Cobrado ${money(receipts)}`)}${analyticsKpi("Utilidad", money(profit), `Gastos ${money(expenses)}`, profit < 0 ? "danger" : "success")}${analyticsKpi("Conversión CRM", `${conversion.toFixed(1)}%`, `${converted} de ${leads.length}`)}${analyticsKpi("No asistió", `${noShowRate.toFixed(1)}%`, `${noShows} ausencia(s)`)}${analyticsKpi("Pendientes", pendingForms + overdueTasks, `${pendingForms} formularios · ${overdueTasks} tareas`)}</div><div class="analytics-grid"><article class="analytics-card span-2"><h3>Facturación por mes</h3>${analyticsBarChart(monthlyRevenue)}</article><article class="analytics-card"><h3>Cuentas por cobrar</h3>${analyticsBarChart(Object.entries(aging).map(([label, value]) => ({ label, value })), true)}</article><article class="analytics-card"><h3>Agenda</h3><div class="analytics-stat-list"><div><span>Atendidas</span><strong>${completedAppointments}</strong></div><div><span>Canceladas</span><strong>${cancelled}</strong></div><div><span>No asistió</span><strong>${noShows}</strong></div></div></article><article class="analytics-card"><h3>Fuentes de captación</h3>${sourceRows.length ? `<div class="analytics-table">${sourceRows.map((row) => `<div><span>${escapeHtml(row.label)}</span><strong>${row.count}</strong><small>${row.rate.toFixed(0)}% conversión</small></div>`).join("")}</div>` : `<div class="empty">Sin datos de captación.</div>`}</article><article class="analytics-card"><h3>Productividad por profesional</h3>${providerRows.length ? `<div class="analytics-table">${providerRows.map((row) => `<div><span>${escapeHtml(row.name)}</span><strong>${row.visits} consultas</strong><small>${money(row.billed)} · ${row.noShows} ausencias</small></div>`).join("")}</div>` : `<div class="empty">Sin actividad profesional.</div>`}</article></div>`;
+}
 
-  $("#reportCard").innerHTML = `
-    <h2>${state.settings.clinicName || "Clinic Control"}</h2>
-    <p>${state.settings.clinicAddress || ""} · ${state.settings.clinicPhone || ""} · ${state.settings.clinicEmail || ""}</p>
-    <p><strong>Fecha:</strong> ${new Date().toLocaleDateString("es-US")}</p>
+function analyticsKpi(label, value, hint, tone = "") { return `<div class="analytics-kpi ${tone}"><small>${label}</small><strong>${value}</strong><span>${hint}</span></div>`; }
+function analyticsMonthlySeries(visits) { const months = new Map(); visits.forEach((visit) => { const key = String(visit.date).slice(0, 7); months.set(key, (months.get(key) || 0) + effectiveVisitTotal(visit)); }); return [...months.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([label, value]) => ({ label, value })); }
+function analyticsBarChart(rows, currency = false) { const max = Math.max(...rows.map((row) => Number(row.value || 0)), 1); return rows.length ? `<div class="analytics-bars">${rows.map((row) => `<div><span>${escapeHtml(row.label)}</span><i><b style="width:${Math.max(2, Number(row.value || 0) / max * 100)}%"></b></i><strong>${currency ? money(row.value) : money(row.value)}</strong></div>`).join("")}</div>` : `<div class="empty">Sin datos para este período.</div>`; }
 
-    <div class="report-metrics">
-      <div class="report-metric">
-        <span>Consultas hoy</span>
-        <strong>${dayVisits.length}</strong>
-      </div>
-      <div class="report-metric">
-        <span>Facturado hoy</span>
-        <strong>${money(dayTotals.billed)}</strong>
-      </div>
-      <div class="report-metric">
-        <span>Cobrado hoy</span>
-        <strong>${money(dayTotals.paid)}</strong>
-      </div>
-      <div class="report-metric">
-        <span>Total pendiente</span>
-        <strong>${money(all.debt)}</strong>
-      </div>
-    </div>
-
-    <div class="data-card">
-      <table>
-        <thead>
-          <tr>
-            <th>Hora</th>
-            <th>Paciente</th>
-            <th>Tipo</th>
-            <th>Motivo</th>
-            <th>Total</th>
-            <th>Pagado</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${dayVisits.length ? dayVisits.map((visit) => `
-            <tr>
-              <td>${fmtDate(visit.date)}</td>
-              <td>${patient(visit.patientId)?.name || "Paciente eliminado"}</td>
-              <td>${visit.type}</td>
-              <td>${visit.reason}</td>
-              <td>${money(visit.total)}</td>
-              <td>${money(totalPaid(visit))}</td>
-            </tr>
-          `).join("") : `<tr><td class="empty" colspan="6">No hay consultas registradas hoy.</td></tr>`}
-        </tbody>
-      </table>
-    </div>
-  `;
+function exportAnalyticsCsv() {
+  const from = $("#reportDateFrom").value; const to = $("#reportDateTo").value; const doctor = $("#reportDoctorFilter").value; const rows = [["Fecha", "Paciente", "Profesional", "Servicio", "Facturado", "Pagado", "Balance"]];
+  state.visits.filter((visit) => { const date = String(visit.date).slice(0, 10); return (!from || date >= from) && (!to || date <= to) && (!doctor || visit.doctor === doctor); }).forEach((visit) => rows.push([visit.date, patient(visit.patientId)?.name || "", visit.doctor || "", visit.reason || "", effectiveVisitTotal(visit), totalPaid(visit), balance(visit)]));
+  const csv = rows.map((row) => row.map((value) => `"${String(value ?? "").replaceAll('"', '""')}"`).join(",")).join("\r\n"); const blob = new Blob(["\ufeff", csv], { type: "text/csv;charset=utf-8" }); const url = URL.createObjectURL(blob); const link = document.createElement("a"); link.href = url; link.download = `clinic-control-analytics-${from || "inicio"}-${to || "hoy"}.csv`; link.click(); URL.revokeObjectURL(url);
 }
 
 const formCategoryLabels = { intake: "Admisión", medical: "Historial clínico", consent: "Consentimiento", followup: "Seguimiento", other: "Otro" };
@@ -3067,6 +3038,9 @@ $("#expenseForm").addEventListener("submit", async (event) => { event.preventDef
 $("#adjustmentForm").addEventListener("submit", async (event) => { event.preventDefault(); try { await saveAdjustment(); } catch (error) { console.error(error); toast("No se pudo aplicar el ajuste."); } });
 $("#cashClosingForm").addEventListener("submit", async (event) => { event.preventDefault(); try { await saveCashClosing(); } catch (error) { console.error(error); toast("No se pudo guardar el cierre."); } });
 $("#cashClosingDate").addEventListener("change", updateCashClosingDifference); $("#cashCounted").addEventListener("input", updateCashClosingDifference);
+$("#reportDateFrom").addEventListener("change", renderReports); $("#reportDateTo").addEventListener("change", renderReports); $("#reportDoctorFilter").addEventListener("change", renderReports); $("#exportAnalyticsCsvBtn").addEventListener("click", exportAnalyticsCsv);
+$("#reportThisMonth").addEventListener("click", () => { const now = new Date(); $("#reportDateFrom").value = localDateValue(new Date(now.getFullYear(), now.getMonth(), 1)); $("#reportDateTo").value = localDateValue(now); renderReports(); });
+$("#reportLast90").addEventListener("click", () => { const now = new Date(); const start = new Date(now); start.setDate(start.getDate() - 89); $("#reportDateFrom").value = localDateValue(start); $("#reportDateTo").value = localDateValue(now); renderReports(); });
 
 ["clinicName", "invoicePrefix", "invoiceAccentColor", "invoiceLogoPosition", "invoiceFooter"].forEach((id) => {
   document.getElementById(id).addEventListener("input", renderInvoiceStylePreview);

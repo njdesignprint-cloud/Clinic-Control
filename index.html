@@ -477,13 +477,13 @@
       <section class="page" id="reports">
         <div class="section-top">
           <div>
-            <h2>Reporte del día</h2>
-            <p>Resumen para cierre, impresión o administración.</p>
+            <h2>Análisis y reportes</h2>
+            <p>Indicadores clínicos, operativos, comerciales y financieros.</p>
           </div>
-          <button class="btn light" onclick="window.print()">Imprimir</button>
+          <div class="section-actions"><button class="btn light" id="exportAnalyticsCsvBtn">Exportar CSV</button><button class="btn light" onclick="window.print()">Imprimir</button></div>
         </div>
-
-        <div class="report-card" id="reportCard"></div>
+        <div class="panel-toolbar analytics-toolbar"><label>Desde<input id="reportDateFrom" type="date" /></label><label>Hasta<input id="reportDateTo" type="date" /></label><select id="reportDoctorFilter"><option value="">Todos los profesionales</option></select><button class="btn light" id="reportThisMonth">Este mes</button><button class="btn light" id="reportLast90">Últimos 90 días</button></div>
+        <div class="report-card analytics-report" id="reportCard"></div>
       </section>
 
       <section class="page" id="settings">
