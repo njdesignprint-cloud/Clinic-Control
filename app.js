@@ -1,4 +1,4 @@
-let state = { settings: {}, patients: [], visits: [], appointments: [], payments: [], documents: [], tasks: [] };
+let state = { settings: {}, patients: [], visits: [], appointments: [], payments: [], documents: [], tasks: [], activities: [] };
 let firestore = null;
 let auth = null;
 let storage = null;
@@ -9,6 +9,7 @@ let unsubscribeAppointments = null;
 let unsubscribePayments = null;
 let unsubscribeDocuments = null;
 let unsubscribeTasks = null;
+let unsubscribeActivities = null;
 let activeInvoiceId = null;
 let activeBillingTab = "all";
 let activeFinancePatientId = null;
@@ -155,6 +156,7 @@ function unsubscribeAll() {
   if (unsubscribePayments) unsubscribePayments();
   if (unsubscribeDocuments) unsubscribeDocuments();
   if (unsubscribeTasks) unsubscribeTasks();
+  if (unsubscribeActivities) unsubscribeActivities();
   unsubscribeSettings = null;
   unsubscribePatients = null;
   unsubscribeVisits = null;
@@ -162,6 +164,7 @@ function unsubscribeAll() {
   unsubscribePayments = null;
   unsubscribeDocuments = null;
   unsubscribeTasks = null;
+  unsubscribeActivities = null;
 }
 
 function showAuthScreen() {
@@ -176,7 +179,7 @@ function showAppScreen() {
 }
 
 function clearState() {
-  state = { settings: {}, patients: [], visits: [], appointments: [], payments: [], documents: [], tasks: [] };
+  state = { settings: {}, patients: [], visits: [], appointments: [], payments: [], documents: [], tasks: [], activities: [] };
   render();
 }
 
@@ -190,6 +193,7 @@ function subscribeToRealtime() {
   const paymentsRef = getCollectionRef("payments");
   const documentsRef = getCollectionRef("documents");
   const tasksRef = getCollectionRef("tasks");
+  const activitiesRef = getCollectionRef("activities");
 
   unsubscribeSettings = settingsRef.onSnapshot((doc) => {
     if (doc.exists) {
@@ -226,6 +230,11 @@ function subscribeToRealtime() {
     renderTasks();
     renderTaskNavCount();
     if ($("#patientRecord")?.classList.contains("active") && activePatientRecordId) renderPatientRecord();
+  });
+  unsubscribeActivities = activitiesRef.orderBy("createdAt", "desc").limit(250).onSnapshot((snapshot) => {
+    state.activities = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+    renderAuditLogPreview();
+    if ($("#patientRecord")?.classList.contains("active") && activePatientRecordId && activePatientRecordTab === "timeline") renderPatientRecord();
   });
 }
 
@@ -299,24 +308,38 @@ async function save() {
   await getClinicDocRef().collection("settings").doc("clinic").set(state.settings, { merge: true });
 }
 
+async function recordActivity({ action, entityType, entityId = "", patientId = "", visitId = "", title, detail = "", metadata = {} }) {
+  if (!auth?.currentUser) return;
+  const id = uid();
+  await getCollectionRef("activities").doc(id).set({ id, action, entityType, entityId, patientId, visitId, title, detail, metadata, userId: auth.currentUser.uid, userEmail: auth.currentUser.email || "", createdAt: new Date().toISOString() });
+}
+
 async function savePatient(data) {
   await ensureAuth();
+  const exists = state.patients.some((item) => item.id === data.id);
   await getCollectionRef("patients").doc(data.id).set({ ...data }, { merge: true });
+  recordActivity({ action: exists ? "updated" : "created", entityType: "patient", entityId: data.id, patientId: data.id, title: exists ? "Paciente actualizado" : "Paciente registrado", detail: data.name || patient(data.id)?.name || "Paciente" }).catch(console.error);
 }
 
 async function saveVisit(data) {
   await ensureAuth();
+  const existing = state.visits.find((item) => item.id === data.id);
   await getCollectionRef("visits").doc(data.id).set({ ...data }, { merge: true });
+  recordActivity({ action: existing ? "updated" : "created", entityType: "visit", entityId: data.id, patientId: data.patientId || existing?.patientId || "", visitId: data.id, title: existing ? "Consulta actualizada" : "Consulta registrada", detail: data.reason || existing?.reason || "" }).catch(console.error);
 }
 
 async function saveAppointment(data) {
   await ensureAuth();
+  const exists = state.appointments.some((item) => item.id === data.id);
   await getCollectionRef("appointments").doc(data.id).set({ ...data }, { merge: true });
+  recordActivity({ action: exists ? "updated" : "created", entityType: "appointment", entityId: data.id, patientId: data.patientId || "", title: exists ? "Cita actualizada" : "Cita programada", detail: data.reason || "" }).catch(console.error);
 }
 
 async function deleteAppointmentEntry(id) {
   await ensureAuth();
+  const appointment = state.appointments.find((item) => item.id === id);
   await getCollectionRef("appointments").doc(id).delete();
+  if (appointment) recordActivity({ action: "deleted", entityType: "appointment", entityId: id, patientId: appointment.patientId || "", title: "Cita eliminada", detail: appointment.reason || "" }).catch(console.error);
 }
 
 async function registerPayment(data, visit) {
@@ -334,21 +357,27 @@ async function registerPayment(data, visit) {
     paid: updatedPatientPaid + updatedInsurancePaid
   }, { merge: true });
   await batch.commit();
+  recordActivity({ action: "payment", entityType: "payment", entityId: data.id, patientId: visit.patientId, visitId: visit.id, title: "Pago registrado", detail: `${money(data.amount)} · ${paymentMethodLabel(data.method)}`, metadata: { amount: data.amount, source: data.source } }).catch(console.error);
 }
 
 async function saveSettings() {
   await ensureAuth();
   await getClinicDocRef().collection("settings").doc("clinic").set(state.settings, { merge: true });
+  recordActivity({ action: "updated", entityType: "system", entityId: "clinic-settings", title: "Configuración actualizada", detail: "Se guardaron los ajustes de la clínica." }).catch(console.error);
 }
 
 async function saveTask(data) {
   await ensureAuth();
+  const existing = state.tasks.find((item) => item.id === data.id);
   await getCollectionRef("tasks").doc(data.id).set(data, { merge: true });
+  recordActivity({ action: data.status === "completed" ? "completed" : existing ? "updated" : "created", entityType: "task", entityId: data.id, patientId: data.patientId || existing?.patientId || "", title: data.status === "completed" ? "Tarea completada" : existing ? "Tarea actualizada" : "Tarea creada", detail: data.title || existing?.title || "" }).catch(console.error);
 }
 
 async function deleteTaskEntry(id) {
   await ensureAuth();
+  const task = state.tasks.find((item) => item.id === id);
   await getCollectionRef("tasks").doc(id).delete();
+  if (task) recordActivity({ action: "deleted", entityType: "task", entityId: id, patientId: task.patientId || "", title: "Tarea eliminada", detail: task.title || "" }).catch(console.error);
 }
 
 async function uploadClinicDocument(file) {
@@ -364,6 +393,7 @@ async function uploadClinicDocument(file) {
   await ref.put(file, { contentType: file.type });
   const url = await ref.getDownloadURL();
   await getCollectionRef("documents").doc(id).set({ id, name: file.name, type: file.type, size: file.size, path, url, createdAt: new Date().toISOString() });
+  recordActivity({ action: "uploaded", entityType: "document", entityId: id, title: "Documento cargado", detail: file.name }).catch(console.error);
 }
 
 async function deleteClinicDocument(id) {
@@ -374,6 +404,7 @@ async function deleteClinicDocument(id) {
       if (error.code !== "storage/object-not-found") throw error;
     });
     await getCollectionRef("documents").doc(id).delete();
+    recordActivity({ action: "deleted", entityType: "document", entityId: id, title: "Documento eliminado", detail: documentItem.name }).catch(console.error);
     toast("Documento eliminado");
   } catch (error) {
     console.error(error);
@@ -383,6 +414,7 @@ async function deleteClinicDocument(id) {
 
 async function deletePatientEntry(id) {
   await ensureAuth();
+  const patientEntry = patient(id);
   const visitSnap = await getCollectionRef("visits").where("patientId", "==", id).get();
   const appointmentSnap = await getCollectionRef("appointments").where("patientId", "==", id).get();
   const paymentSnap = await getCollectionRef("payments").where("patientId", "==", id).get();
@@ -394,11 +426,14 @@ async function deletePatientEntry(id) {
   paymentSnap.docs.forEach((doc) => batch.delete(doc.ref));
   taskSnap.docs.forEach((doc) => batch.delete(doc.ref));
   await batch.commit();
+  recordActivity({ action: "deleted", entityType: "patient", entityId: id, title: "Paciente eliminado", detail: patientEntry?.name || "Paciente" }).catch(console.error);
 }
 
 async function deleteVisitEntry(id) {
   await ensureAuth();
+  const visit = state.visits.find((item) => item.id === id);
   await getCollectionRef("visits").doc(id).delete();
+  if (visit) recordActivity({ action: "deleted", entityType: "visit", entityId: id, patientId: visit.patientId || "", visitId: id, title: "Consulta eliminada", detail: visit.reason || "" }).catch(console.error);
 }
 
 const $ = (selector) => document.querySelector(selector);
@@ -823,6 +858,15 @@ function renderPatientRecord() {
   const payments = [...recordedPayments, ...initialPayments].sort((a, b) => new Date(b.date) - new Date(a.date));
   const docs = visits.flatMap((visit) => (visit.documents || []).map((doc) => ({ ...doc, visit })));
   const patientTasks = state.tasks.filter((task) => task.patientId === p.id).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  const historicEvents = [
+    { id: `patient-${p.id}`, entityType: "patient", title: "Paciente registrado", detail: "Expediente creado", createdAt: p.createdAt },
+    ...visits.map((visit) => ({ id: `visit-${visit.id}`, entityType: "visit", title: "Consulta", detail: visit.reason || "Consulta registrada", createdAt: visit.date })),
+    ...payments.map((entry) => ({ id: `payment-${entry.id}`, entityType: "payment", title: entry.method === "initial" ? "Pago inicial" : "Pago recibido", detail: `${money(entry.amount)} · ${paymentMethodLabel(entry.method)}`, createdAt: entry.date })),
+    ...patientTasks.map((task) => ({ id: `task-${task.id}`, entityType: "task", title: task.title, detail: task.status === "completed" ? "Tarea completada" : "Tarea creada", createdAt: task.createdAt }))
+  ].filter((event) => event.createdAt);
+  const patientActivities = state.activities.filter((entry) => entry.patientId === p.id);
+  const auditedIds = new Set(patientActivities.map((entry) => `${entry.entityType}-${entry.entityId}`));
+  const timeline = [...patientActivities, ...historicEvents.filter((event) => !auditedIds.has(event.id))].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   const data = totals(visits);
   const initials = p.name.split(/\s+/).slice(0, 2).map((part) => part[0]).join("").toUpperCase();
   $("#patientRecordHeader").innerHTML = `<button class="btn light" onclick="showPage('patients')">← Pacientes</button><div class="patient-record-avatar">${escapeHtml(initials)}</div><div class="patient-record-identity"><small>Expediente del paciente</small><h2>${escapeHtml(p.name)}</h2><span>${escapeHtml([p.document, p.phone, p.email].filter(Boolean).join(" · ") || "Información de contacto no indicada")}</span></div><div class="patient-record-actions"><button class="btn light" onclick="editPatient('${p.id}')">Editar</button><button class="btn primary" onclick="openVisitDialog({patientId:'${p.id}'})">Nueva consulta</button></div>`;
@@ -832,7 +876,8 @@ function renderPatientRecord() {
   const documentHtml = docs.length ? `<div class="patient-record-list">${docs.map((doc) => `<div><span><strong>${escapeHtml(doc.name)}</strong><small>${fmtDate(doc.visit.date)} · ${doc.status === "signed" ? `Firmado por ${escapeHtml(doc.signedBy)}` : "Pendiente de firma"}</small></span><span class="badge ${doc.status === "signed" ? "green" : "red"}">${doc.status === "signed" ? "Firmado" : "Pendiente"}</span>${doc.url ? `<a class="btn light" href="${escapeHtml(doc.url)}" target="_blank" rel="noopener">Ver</a>` : ""}</div>`).join("")}</div>` : `<div class="empty">No hay documentos asignados.</div>`;
   const paymentHtml = `<div class="patient-record-metrics"><div><small>Facturado</small><strong>${money(data.billed)}</strong></div><div><small>Pagado</small><strong>${money(data.paid)}</strong></div><div><small>Balance</small><strong>${money(data.debt)}</strong></div></div>${payments.length ? `<div class="patient-record-list">${payments.map((entry) => `<div><span><strong>${fmtDate(entry.date)} · ${escapeHtml(paymentMethodLabel(entry.method))}</strong><small>${escapeHtml(entry.reference || "Sin referencia")}${entry.note ? ` · ${escapeHtml(entry.note)}` : ""}</small></span><strong>${money(entry.amount)}</strong><button class="btn light" onclick="openInvoice('${entry.visitId}')">Factura</button></div>`).join("")}</div>` : `<div class="empty">No hay abonos posteriores registrados.</div>`}`;
   const alertHtml = `${patientHasAlert(p) ? `<div class="patient-alert-detail"><span>📌</span><div><h3>${escapeHtml(p.patientAlertMessage)}</h3><p>${patientAlertDateLabel(p)}</p></div><button class="btn primary" onclick="resolvePatientAlert('${p.id}')">Marcar resuelta</button></div>` : ""}<div class="patient-record-section-head"><h3>Tareas y seguimientos</h3><button class="btn primary" onclick="openTaskDialog('', '${p.id}')">+ Agregar tarea</button></div>${patientTasks.length ? `<div class="patient-record-list">${patientTasks.map((task) => `<div><span><strong>${escapeHtml(task.title)}</strong><small>${taskTypes[task.type] || "Tarea"} · ${task.dueDate ? new Date(task.dueDate).toLocaleString("es-US") : "Sin fecha"}</small></span><span class="badge ${task.status === "completed" ? "green" : taskIsOverdue(task) ? "red" : "blue"}">${task.status === "completed" ? "Completada" : taskIsOverdue(task) ? "Vencida" : "Pendiente"}</span><button class="btn light" onclick="toggleTask('${task.id}')">${task.status === "completed" ? "Reabrir" : "Completar"}</button></div>`).join("")}</div>` : `<div class="empty">No hay tareas para este paciente.</div>`}`;
-  $("#patientRecordContent").innerHTML = { summary, visits: visitHtml, documents: documentHtml, payments: paymentHtml, alerts: alertHtml }[activePatientRecordTab] || summary;
+  const timelineHtml = timeline.length ? `<div class="patient-timeline">${timeline.map((entry) => `<div class="timeline-event"><span>${activityIcons[entry.entityType] || "•"}</span><div><strong>${escapeHtml(entry.title)}</strong><p>${escapeHtml(entry.detail || "")}</p><small>${new Date(entry.createdAt).toLocaleString("es-US")}${entry.userEmail ? ` · ${escapeHtml(entry.userEmail)}` : ""}</small></div></div>`).join("")}</div>` : `<div class="empty">No hay actividad registrada.</div>`;
+  $("#patientRecordContent").innerHTML = { summary, visits: visitHtml, documents: documentHtml, payments: paymentHtml, alerts: alertHtml, timeline: timelineHtml }[activePatientRecordTab] || summary;
 }
 
 function selectPatientRecordTab(tabName) {
@@ -845,6 +890,7 @@ async function resolvePatientAlert(id) {
   if (!p) return;
   try {
     await savePatient({ id, patientAlertActive: false, patientAlertResolvedAt: new Date().toISOString() });
+    recordActivity({ action: "resolved", entityType: "alert", entityId: `alert-${id}`, patientId: id, title: "Alerta resuelta", detail: p.patientAlertMessage || "Alerta del paciente" }).catch(console.error);
     p.patientAlertActive = false;
     render();
     if ($("#visitDialog")?.classList.contains("active") && $("#visitPatient")?.value === id) renderVisitPatientBanner();
@@ -1527,6 +1573,14 @@ function renderSettings() {
     : `<span>Sin logo</span>`;
   renderInvoiceStylePreview();
   renderClinicDocuments();
+  renderAuditLogPreview();
+}
+
+const activityIcons = { patient: "●", visit: "◆", appointment: "▦", payment: "$", document: "▤", signature: "✍", task: "✓", alert: "📌", system: "•" };
+function renderAuditLogPreview() {
+  const box = $("#auditLogPreview"); if (!box) return;
+  const rows = state.activities.slice(0, 20);
+  box.innerHTML = rows.length ? rows.map((entry) => `<div class="audit-row"><span>${activityIcons[entry.entityType] || "•"}</span><div><strong>${escapeHtml(entry.title)}</strong><small>${escapeHtml(entry.detail || "")} · ${new Date(entry.createdAt).toLocaleString("es-US")}</small><small>${escapeHtml(entry.userEmail || "Usuario de la clínica")}</small></div></div>`).join("") : `<div class="empty document-empty">Las acciones nuevas aparecerán aquí.</div>`;
 }
 
 function formatFileSize(bytes) {
@@ -1654,6 +1708,7 @@ async function saveCurrentSignature() {
     const signedAt = new Date().toISOString();
     const documents = visit.documents.map((item) => item.documentId === documentItem.documentId ? { ...item, status: "signed", signedBy, signedAt, signatureUrl, signaturePath: path, consentAccepted: true, signedByUserId: auth.currentUser.uid } : item);
     await saveVisit({ id: visit.id, documents });
+    recordActivity({ action: "signed", entityType: "signature", entityId: documentItem.documentId, patientId: visit.patientId, visitId: visit.id, title: "Documento firmado", detail: `${documentItem.name} · ${signedBy}` }).catch(console.error);
     if (documentItem.signaturePath && documentItem.signaturePath !== path) storage.ref(documentItem.signaturePath).delete().catch(() => {});
     visit.documents = documents;
     renderSignatureDialog();

@@ -1666,6 +1666,18 @@ td small {
 .patient-alert-detail { display: grid; grid-template-columns: auto 1fr auto; gap: 16px; align-items: center; padding: 22px; border: 1px solid #fdba74; border-radius: 16px; color: #9a3412; background: #fff7ed; }
 .patient-alert-detail > span { font-size: 28px; }
 .patient-alert-detail h3, .patient-alert-detail p { margin: 0; }
+.patient-timeline { position: relative; display: grid; gap: 0; padding-left: 16px; }
+.patient-timeline::before { content: ""; position: absolute; left: 31px; top: 20px; bottom: 20px; width: 2px; background: #dbe5eb; }
+.timeline-event { position: relative; display: grid; grid-template-columns: 32px 1fr; gap: 14px; padding: 12px 0; }
+.timeline-event > span { z-index: 1; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 10px; color: var(--primary); background: #e6fffb; font-weight: 900; }
+.timeline-event > div { padding: 2px 0 15px; border-bottom: 1px solid #eef2f7; }
+.timeline-event p { margin: 4px 0; color: var(--muted); }
+.timeline-event small { color: #94a3b8; }
+.audit-log-preview { display: grid; gap: 8px; max-height: 430px; overflow: auto; }
+.audit-row { display: grid; grid-template-columns: 36px 1fr; gap: 10px; align-items: center; padding: 11px 12px; border: 1px solid var(--line); border-radius: 12px; background: white; }
+.audit-row > span { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 10px; color: var(--primary); background: #e6fffb; font-weight: 900; }
+.audit-row > div { display: grid; gap: 2px; }
+.audit-row small { color: var(--muted); }
 .patient-record-section-head { display: flex; justify-content: space-between; gap: 14px; align-items: center; margin: 20px 0 10px; }
 .patient-record-section-head h3 { margin: 0; }
 .task-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
