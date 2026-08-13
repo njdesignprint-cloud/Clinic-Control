@@ -69,6 +69,16 @@ service cloud.firestore {
     match /clinics/{clinicId}/waitlist/{document=**} {
       allow read, write: if hasRole(clinicId, ['admin', 'reception', 'clinical']);
     }
+    match /clinics/{clinicId}/expenses/{document=**} {
+      allow read, write: if hasRole(clinicId, ['admin', 'accounting']);
+    }
+    match /clinics/{clinicId}/adjustments/{document=**} {
+      allow read: if hasRole(clinicId, ['admin', 'accounting', 'clinical']);
+      allow write: if hasRole(clinicId, ['admin', 'accounting']);
+    }
+    match /clinics/{clinicId}/cashClosings/{document=**} {
+      allow read, write: if hasRole(clinicId, ['admin', 'accounting']);
+    }
     match /clinics/{clinicId}/activities/{document=**} {
       allow read: if belongsTo(clinicId);
       allow create: if belongsTo(clinicId) && request.resource.data.userId == request.auth.uid;

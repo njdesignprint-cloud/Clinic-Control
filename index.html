@@ -395,7 +395,7 @@
             <h2>Pagos y contabilidad</h2>
             <p>Control unificado de pagos de pacientes y reclamaciones de seguros.</p>
           </div>
-          <div class="billing-actions"><button class="btn light" id="printBillingBtn">Imprimir</button><button class="btn light" id="downloadBillingPdfBtn">Descargar PDF</button><button class="btn primary" id="quickPaymentBtn">Registrar pago</button></div>
+          <div class="billing-actions"><button class="btn light" id="expenseCreateBtn">+ Gasto</button><button class="btn light" id="cashClosingCreateBtn">Cierre de caja</button><button class="btn light" id="printBillingBtn">Imprimir</button><button class="btn light" id="downloadBillingPdfBtn">Descargar PDF</button><button class="btn primary" id="quickPaymentBtn">Registrar pago</button></div>
         </div>
 
         <div id="billingSummary" class="kpi-grid billing-summary"></div>
@@ -416,6 +416,7 @@
         </div>
         <div class="data-card responsive-records"><table><thead><tr><th>Fecha / Factura</th><th>Paciente</th><th>Servicios</th><th>Tipo</th><th>Facturado</th><th>Paciente</th><th>Seguro</th><th>Balance</th><th>Estado</th><th></th></tr></thead><tbody id="billingTable"></tbody></table></div>
         <article class="card payment-history-card"><div class="card-head"><div><h3>Historial de pagos por cliente</h3><p>La búsqueda y las fechas de arriba también filtran cada pago inicial y abono posterior.</p></div></div><div id="paymentHistory" class="payment-history"></div></article>
+        <section class="accounting-advanced"><div id="profitabilitySummary" class="profitability-summary"></div><div class="accounting-columns"><article class="card"><div class="card-head"><div><h3>Gastos</h3><p>Costos operativos y administrativos.</p></div></div><div id="expenseList" class="accounting-list"></div></article><article class="card"><div class="card-head"><div><h3>Cierres de caja</h3><p>Conciliación diaria de efectivo.</p></div></div><div id="cashClosingList" class="accounting-list"></div></article></div></section>
       </section>
 
       <section class="page" id="tasks">
@@ -829,6 +830,18 @@
       </div></div>
       <div class="modal-actions"><button type="button" class="btn light" data-close="paymentDialog">Cancelar</button><button type="submit" class="btn primary">Aplicar pago</button></div>
     </form>
+  </dialog>
+
+  <dialog id="expenseDialog">
+    <form id="expenseForm" class="modal compact-modal" method="dialog"><div class="modal-head"><div><small>Contabilidad</small><h3>Registrar gasto</h3></div><button type="button" class="close-btn" data-close="expenseDialog">×</button></div><div class="modal-body"><input id="expenseId" type="hidden" /><div class="form-grid"><label class="field-group">Fecha<input id="expenseDate" type="datetime-local" required /></label><label class="field-group">Categoría<select id="expenseCategory"><option>Renta</option><option>Nómina</option><option>Insumos médicos</option><option>Servicios</option><option>Marketing</option><option>Software</option><option>Impuestos</option><option>Otro</option></select></label><label class="field-group full">Proveedor / descripción<input id="expenseVendor" required /></label><label class="field-group">Monto<input id="expenseAmount" type="number" min="0.01" step="0.01" required /></label><label class="field-group">Método<select id="expenseMethod"><option value="cash">Efectivo</option><option value="card">Tarjeta</option><option value="check">Cheque</option><option value="transfer">Transferencia</option><option value="other">Otro</option></select></label><label class="field-group full">Referencia<input id="expenseReference" /></label><label class="field-group full">Notas<textarea id="expenseNotes" rows="3"></textarea></label></div></div><div class="modal-actions"><button type="button" class="btn light" data-close="expenseDialog">Cancelar</button><button type="submit" class="btn primary">Guardar gasto</button></div></form>
+  </dialog>
+
+  <dialog id="adjustmentDialog">
+    <form id="adjustmentForm" class="modal compact-modal" method="dialog"><div class="modal-head"><div><small>Ajuste financiero</small><h3 id="adjustmentTitle">Ajustar factura</h3></div><button type="button" class="close-btn" data-close="adjustmentDialog">×</button></div><div class="modal-body"><input id="adjustmentVisitId" type="hidden" /><div id="adjustmentContext" class="payment-context"></div><div class="form-grid"><label class="field-group">Tipo<select id="adjustmentType"><option value="discount">Descuento</option><option value="writeoff">Anulación de saldo</option><option value="refund">Reembolso</option></select></label><label class="field-group">Monto<input id="adjustmentAmount" type="number" min="0.01" step="0.01" required /></label><label class="field-group full">Motivo<input id="adjustmentReason" required /></label><label class="field-group full">Notas<textarea id="adjustmentNotes" rows="3"></textarea></label></div></div><div class="modal-actions"><button type="button" class="btn light" data-close="adjustmentDialog">Cancelar</button><button type="submit" class="btn primary">Aplicar ajuste</button></div></form>
+  </dialog>
+
+  <dialog id="cashClosingDialog">
+    <form id="cashClosingForm" class="modal compact-modal" method="dialog"><div class="modal-head"><div><small>Conciliación</small><h3>Cierre de caja</h3></div><button type="button" class="close-btn" data-close="cashClosingDialog">×</button></div><div class="modal-body"><div class="form-grid"><label class="field-group">Fecha<input id="cashClosingDate" type="date" required /></label><label class="field-group">Efectivo esperado<input id="cashExpected" type="number" step="0.01" readonly /></label><label class="field-group">Efectivo contado<input id="cashCounted" type="number" step="0.01" min="0" required /></label><label class="field-group">Diferencia<input id="cashDifference" type="number" step="0.01" readonly /></label><label class="field-group full">Notas<textarea id="cashClosingNotes" rows="3"></textarea></label></div></div><div class="modal-actions"><button type="button" class="btn light" data-close="cashClosingDialog">Cancelar</button><button type="submit" class="btn primary">Guardar cierre</button></div></form>
   </dialog>
 
   <dialog id="taskDialog">

@@ -1,4 +1,4 @@
-let state = { settings: {}, patients: [], visits: [], appointments: [], payments: [], documents: [], tasks: [], activities: [], teamMembers: [], formTemplates: [], formResponses: [], communications: [], clinicalRecords: [], leads: [], campaigns: [], waitlist: [] };
+let state = { settings: {}, patients: [], visits: [], appointments: [], payments: [], documents: [], tasks: [], activities: [], teamMembers: [], formTemplates: [], formResponses: [], communications: [], clinicalRecords: [], leads: [], campaigns: [], waitlist: [], expenses: [], adjustments: [], cashClosings: [] };
 let firestore = null;
 let auth = null;
 let storage = null;
@@ -20,6 +20,9 @@ let unsubscribeClinicalRecords = null;
 let unsubscribeLeads = null;
 let unsubscribeCampaigns = null;
 let unsubscribeWaitlist = null;
+let unsubscribeExpenses = null;
+let unsubscribeAdjustments = null;
+let unsubscribeCashClosings = null;
 let activeInvoiceId = null;
 let activeBillingTab = "all";
 let activeFinancePatientId = null;
@@ -71,7 +74,10 @@ function buildSeedState() {
     clinicalRecords: [],
     leads: [],
     campaigns: [],
-    waitlist: []
+    waitlist: [],
+    expenses: [],
+    adjustments: [],
+    cashClosings: []
   };
 }
 
@@ -108,7 +114,10 @@ function normalizeState(saved) {
     clinicalRecords: Array.isArray(saved?.clinicalRecords) ? saved.clinicalRecords : seed.clinicalRecords,
     leads: Array.isArray(saved?.leads) ? saved.leads : seed.leads,
     campaigns: Array.isArray(saved?.campaigns) ? saved.campaigns : seed.campaigns,
-    waitlist: Array.isArray(saved?.waitlist) ? saved.waitlist : seed.waitlist
+    waitlist: Array.isArray(saved?.waitlist) ? saved.waitlist : seed.waitlist,
+    expenses: Array.isArray(saved?.expenses) ? saved.expenses : seed.expenses,
+    adjustments: Array.isArray(saved?.adjustments) ? saved.adjustments : seed.adjustments,
+    cashClosings: Array.isArray(saved?.cashClosings) ? saved.cashClosings : seed.cashClosings
   };
 }
 
@@ -199,6 +208,9 @@ function unsubscribeAll() {
   if (unsubscribeLeads) unsubscribeLeads();
   if (unsubscribeCampaigns) unsubscribeCampaigns();
   if (unsubscribeWaitlist) unsubscribeWaitlist();
+  if (unsubscribeExpenses) unsubscribeExpenses();
+  if (unsubscribeAdjustments) unsubscribeAdjustments();
+  if (unsubscribeCashClosings) unsubscribeCashClosings();
   unsubscribeSettings = null;
   unsubscribePatients = null;
   unsubscribeVisits = null;
@@ -215,6 +227,9 @@ function unsubscribeAll() {
   unsubscribeLeads = null;
   unsubscribeCampaigns = null;
   unsubscribeWaitlist = null;
+  unsubscribeExpenses = null;
+  unsubscribeAdjustments = null;
+  unsubscribeCashClosings = null;
 }
 
 function showAuthScreen() {
@@ -229,7 +244,7 @@ function showAppScreen() {
 }
 
 function clearState() {
-  state = { settings: {}, patients: [], visits: [], appointments: [], payments: [], documents: [], tasks: [], activities: [], teamMembers: [], formTemplates: [], formResponses: [], communications: [], clinicalRecords: [], leads: [], campaigns: [], waitlist: [] };
+  state = { settings: {}, patients: [], visits: [], appointments: [], payments: [], documents: [], tasks: [], activities: [], teamMembers: [], formTemplates: [], formResponses: [], communications: [], clinicalRecords: [], leads: [], campaigns: [], waitlist: [], expenses: [], adjustments: [], cashClosings: [] };
   render();
 }
 
@@ -252,6 +267,9 @@ function subscribeToRealtime() {
   const leadsRef = getCollectionRef("leads");
   const campaignsRef = getCollectionRef("campaigns");
   const waitlistRef = getCollectionRef("waitlist");
+  const expensesRef = getCollectionRef("expenses");
+  const adjustmentsRef = getCollectionRef("adjustments");
+  const cashClosingsRef = getCollectionRef("cashClosings");
 
   unsubscribeSettings = settingsRef.onSnapshot((doc) => {
     if (doc.exists) {
@@ -324,6 +342,9 @@ function subscribeToRealtime() {
   if (["admin", "reception", "clinical"].includes(currentAccess.role)) unsubscribeWaitlist = waitlistRef.onSnapshot((snapshot) => {
     state.waitlist = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })); renderWaitlist();
   });
+  if (["admin", "accounting"].includes(currentAccess.role)) unsubscribeExpenses = expensesRef.onSnapshot((snapshot) => { state.expenses = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })); renderAdvancedAccounting(); });
+  if (["admin", "accounting", "clinical"].includes(currentAccess.role)) unsubscribeAdjustments = adjustmentsRef.onSnapshot((snapshot) => { state.adjustments = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })); render(); });
+  if (["admin", "accounting"].includes(currentAccess.role)) unsubscribeCashClosings = cashClosingsRef.onSnapshot((snapshot) => { state.cashClosings = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })); renderAdvancedAccounting(); });
 }
 
 const roleLabels = { admin: "Administrador", reception: "Recepción", clinical: "Profesional clínico", accounting: "Contabilidad" };
@@ -683,15 +704,20 @@ function patient(id) {
   return state.patients.find((item) => item.id === id);
 }
 
+function visitAdjustments(visitId) { return state.adjustments.filter((item) => item.visitId === visitId); }
+function adjustmentAmount(visitId, types) { return visitAdjustments(visitId).filter((item) => types.includes(item.type)).reduce((sum, item) => sum + Number(item.amount || 0), 0); }
+function effectiveVisitTotal(visit) { return Math.max(0, Number(visit.total || 0) - adjustmentAmount(visit.id, ["discount", "writeoff"])); }
+
 function balance(visit) {
-  return Math.max(0, Number(visit.total || 0) - totalPaid(visit));
+  return Math.max(0, effectiveVisitTotal(visit) - totalPaid(visit));
 }
 
 function totalPaid(visit) {
+  const refunds = adjustmentAmount(visit.id, ["refund"]);
   if (visit.patientPaid !== undefined || visit.insurancePaid !== undefined) {
-    return Number(visit.patientPaid || 0) + Number(visit.insurancePaid || 0);
+    return Math.max(0, Number(visit.patientPaid || 0) + Number(visit.insurancePaid || 0) - refunds);
   }
-  return Number(visit.paid || 0);
+  return Math.max(0, Number(visit.paid || 0) - refunds);
 }
 
 function paymentType(visit) {
@@ -726,7 +752,7 @@ function localDateValue(date = new Date()) {
 
 function totals(visits = state.visits) {
   return visits.reduce((acc, visit) => {
-    acc.billed += Number(visit.total || 0);
+    acc.billed += effectiveVisitTotal(visit);
     acc.paid += totalPaid(visit);
     acc.debt += balance(visit);
     return acc;
@@ -772,6 +798,7 @@ function render() {
   renderVisitOptions();
   renderVisits();
   renderBilling();
+  renderAdvancedAccounting();
   renderInvoicePatientOptions();
   renderInvoices();
   renderReports();
@@ -1204,9 +1231,11 @@ function renderVisits() {
 
 function billingVisitAmounts(visit) {
   const type = paymentType(visit);
-  const total = Number(visit.total || 0);
-  const patientPaid = visit.patientPaid !== undefined ? Number(visit.patientPaid || 0) : (type === "cash" ? Number(visit.paid || 0) : 0);
-  const insurancePaid = Number(visit.insurancePaid || 0);
+  const total = effectiveVisitTotal(visit);
+  const refunds = adjustmentAmount(visit.id, ["refund"]);
+  const rawPatientPaid = visit.patientPaid !== undefined ? Number(visit.patientPaid || 0) : (type === "cash" ? Number(visit.paid || 0) : 0);
+  const patientPaid = type === "cash" ? Math.max(0, rawPatientPaid - refunds) : rawPatientPaid;
+  const insurancePaid = type === "insurance" ? Math.max(0, Number(visit.insurancePaid || 0) - refunds) : Number(visit.insurancePaid || 0);
   const patientExpected = type === "cash" ? total : Math.min(total, Math.max(Number(visit.copay || 0), patientPaid));
   const insuranceExpected = type === "insurance" ? Math.max(0, total - patientExpected) : 0;
   return {
@@ -1299,10 +1328,11 @@ function renderBilling() {
     const p = patient(visit.patientId);
     const type = paymentType(visit);
     const status = financialStatus(visit);
-    const patientPaid = visit.patientPaid !== undefined ? Number(visit.patientPaid || 0) : (type === "cash" ? Number(visit.paid || 0) : 0);
-    return `<tr><td data-label="Fecha / Factura">${fmtDate(visit.date)}<br><small>${escapeHtml(invoiceNumber(visit))}</small></td><td data-label="Paciente"><strong>${escapeHtml(p?.name || "Paciente eliminado")}</strong><br><small>${escapeHtml(type === "insurance" ? (p?.insuranceCompany || "Seguro no indicado") : "Pago propio")}</small></td><td data-label="Servicios">${visitItems(visit).length} servicio(s)<br><small>${escapeHtml(visitItems(visit).map((item) => item.description).join(", "))}</small></td><td data-label="Tipo"><span class="badge ${type === "insurance" ? "blue" : "green"}">${type === "insurance" ? "Seguro" : "Cash"}</span></td><td data-label="Facturado">${money(visit.total)}</td><td data-label="Paciente">${money(patientPaid)}</td><td data-label="Seguro">${money(visit.insurancePaid)}</td><td data-label="Balance"><strong>${money(balance(visit))}</strong></td><td data-label="Estado"><span class="badge ${status.color}">${status.label}</span></td><td><button class="btn light invoice-view" onclick="openPaymentDialog('${visit.id}')">Registrar pago</button></td></tr>`;
+    const value = billingVisitAmounts(visit); const adjustmentTotal = adjustmentAmount(visit.id, ["discount", "writeoff", "refund"]);
+    return `<tr><td data-label="Fecha / Factura">${fmtDate(visit.date)}<br><small>${escapeHtml(invoiceNumber(visit))}</small></td><td data-label="Paciente"><strong>${escapeHtml(p?.name || "Paciente eliminado")}</strong><br><small>${escapeHtml(type === "insurance" ? (p?.insuranceCompany || "Seguro no indicado") : "Pago propio")}</small></td><td data-label="Servicios">${visitItems(visit).length} servicio(s)<br><small>${escapeHtml(visitItems(visit).map((item) => item.description).join(", "))}${adjustmentTotal ? ` · Ajustes ${money(adjustmentTotal)}` : ""}</small></td><td data-label="Tipo"><span class="badge ${type === "insurance" ? "blue" : "green"}">${type === "insurance" ? "Seguro" : "Cash"}</span></td><td data-label="Facturado">${money(value.total)}</td><td data-label="Paciente">${money(value.patientPaid)}</td><td data-label="Seguro">${money(value.insurancePaid)}</td><td data-label="Balance"><strong>${money(balance(visit))}</strong></td><td data-label="Estado"><span class="badge ${status.color}">${status.label}</span></td><td><div class="row-actions"><button class="btn light invoice-view" onclick="openPaymentDialog('${visit.id}')">Pago</button><button class="btn light" onclick="openAdjustmentDialog('${visit.id}')">Ajuste</button></div></td></tr>`;
   }).join("") : `<tr><td class="empty" colspan="10">No hay pagos que coincidan con los filtros.</td></tr>`;
   renderPaymentHistory();
+  renderAdvancedAccounting();
 }
 
 function billingReportTitle() {
@@ -1525,6 +1555,8 @@ function openInvoice(id) {
   if (!visit) return;
   const p = patient(visit.patientId);
   const items = visitItems(visit);
+  const adjustments = visitAdjustments(visit.id);
+  const invoiceValue = billingVisitAmounts(visit);
   const due = balance(visit);
   const design = invoiceSettings();
   const clinicContacts = [
@@ -1546,12 +1578,13 @@ function openInvoice(id) {
       </div>
       <table class="invoice-items">
         <thead><tr><th>Descripción del servicio</th><th>Cantidad</th><th>Precio</th><th>Total</th></tr></thead>
-        <tbody>${items.map((item) => `<tr><td>${escapeHtml(item.description)}</td><td>${item.quantity}</td><td>${money(item.unitPrice)}</td><td>${money(item.price)}</td></tr>`).join("")}</tbody>
+        <tbody>${items.map((item) => `<tr><td>${escapeHtml(item.description)}</td><td>${item.quantity}</td><td>${money(item.unitPrice)}</td><td>${money(item.price)}</td></tr>`).join("")}${adjustments.filter((item) => item.type !== "refund").map((item) => `<tr class="invoice-adjustment"><td>${item.type === "discount" ? "Descuento" : "Anulación de saldo"}: ${escapeHtml(item.reason)}</td><td>1</td><td>-${money(item.amount)}</td><td>-${money(item.amount)}</td></tr>`).join("")}</tbody>
       </table>
       <div class="invoice-summary">
-        <div><span>Total</span><strong>${money(visit.total)}</strong></div>
-        <div><span>Pagado por paciente</span><strong>${money(visit.patientPaid ?? (paymentType(visit) === "cash" ? visit.paid : 0))}</strong></div>
-        ${paymentType(visit) === "insurance" ? `<div><span>Pagado por seguro</span><strong>${money(visit.insurancePaid ?? visit.paid)}</strong></div><div><span>Copago esperado</span><strong>${money(visit.copay)}</strong></div>` : ""}
+        <div><span>Total ajustado</span><strong>${money(invoiceValue.total)}</strong></div>
+        <div><span>Pagado por paciente</span><strong>${money(invoiceValue.patientPaid)}</strong></div>
+        ${paymentType(visit) === "insurance" ? `<div><span>Pagado por seguro</span><strong>${money(invoiceValue.insurancePaid)}</strong></div><div><span>Copago esperado</span><strong>${money(visit.copay)}</strong></div>` : ""}
+        ${adjustmentAmount(visit.id, ["refund"]) ? `<div><span>Reembolsos</span><strong>-${money(adjustmentAmount(visit.id, ["refund"]))}</strong></div>` : ""}
         <div class="invoice-balance"><span>Balance</span><strong>${money(due)}</strong></div>
       </div>
       ${paymentType(visit) === "insurance" ? `<div class="invoice-claim"><div><small>Reclamación</small><strong>${escapeHtml(visit.claimNumber || "Sin número")}</strong></div><div><small>Estado</small><strong>${escapeHtml({draft:"Preparada",submitted:"Enviada",processing:"En proceso",paid:"Pagada",partial:"Pago parcial",rejected:"Rechazada"}[visit.claimStatus] || "No indicado")}</strong></div></div>` : ""}
@@ -1642,7 +1675,9 @@ function downloadInvoicePdf(id = activeInvoiceId) {
 
   y += 8;
   pdf.setFont("helvetica", "bold");
-  pdf.text(`Total: ${money(visit.total)}`, right, y, { align: "right" });
+  const invoiceAdjustments = visitAdjustments(visit.id);
+  if (invoiceAdjustments.length) { pdf.setFont("helvetica", "normal"); pdf.text(`Ajustes: ${money(invoiceAdjustments.reduce((sum, item) => sum + Number(item.amount || 0), 0))}`, right, y, { align: "right" }); y += 18; pdf.setFont("helvetica", "bold"); }
+  pdf.text(`Total ajustado: ${money(effectiveVisitTotal(visit))}`, right, y, { align: "right" });
   y += 18;
   pdf.text(`Pagado: ${money(totalPaid(visit))}`, right, y, { align: "right" });
   y += 18;
@@ -1876,6 +1911,35 @@ async function saveCampaign() {
   await getCollectionRef("campaigns").doc(id).set(data, { merge: true }); recordActivity({ action: existing ? "updated" : "created", entityType: "campaign", entityId: id, title: existing ? "Campaña actualizada" : "Campaña creada", detail: data.name }).catch(console.error); $("#campaignDialog").close(); toast("Campaña guardada.");
 }
 
+function accountingReceipts(dateFrom = "", dateTo = "", method = "") {
+  const inRange = (value) => { const date = String(value || "").slice(0, 10); return (!dateFrom || date >= dateFrom) && (!dateTo || date <= dateTo); };
+  const later = state.payments.filter((entry) => inRange(entry.date) && (!method || entry.method === method)).reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
+  const initial = state.visits.filter((visit) => inRange(visit.date)).reduce((sum, visit) => { if (method && method !== "cash") return sum; const relatedLater = state.payments.filter((entry) => entry.visitId === visit.id && (!method || entry.method === method)).reduce((value, entry) => value + Number(entry.amount || 0), 0); const rawInitial = method === "cash" ? (paymentType(visit) === "cash" ? Number(visit.patientPaid ?? visit.paid ?? 0) : 0) : Number(visit.patientPaid || 0) + Number(visit.insurancePaid || 0); return sum + Math.max(0, rawInitial - relatedLater); }, 0);
+  const refunds = state.adjustments.filter((entry) => entry.type === "refund" && inRange(entry.date) && (!method || (method === "cash" && paymentType(state.visits.find((visit) => visit.id === entry.visitId) || {}) === "cash"))).reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
+  return Math.max(0, later + initial - refunds);
+}
+
+function renderAdvancedAccounting() {
+  const summary = $("#profitabilitySummary"); if (!summary) return;
+  const dateFrom = $("#billingDateFrom")?.value || ""; const dateTo = $("#billingDateTo")?.value || ""; const inRange = (value) => { const date = String(value || "").slice(0, 10); return (!dateFrom || date >= dateFrom) && (!dateTo || date <= dateTo); };
+  const revenue = accountingReceipts(dateFrom, dateTo); const expenses = state.expenses.filter((item) => inRange(item.date)).reduce((sum, item) => sum + Number(item.amount || 0), 0); const profit = revenue - expenses; const margin = revenue ? (profit / revenue) * 100 : 0;
+  summary.innerHTML = `<div><small>Ingresos cobrados</small><strong>${money(revenue)}</strong></div><div><small>Gastos</small><strong>${money(expenses)}</strong></div><div class="${profit < 0 ? "negative" : "positive"}"><small>Utilidad neta</small><strong>${money(profit)}</strong></div><div><small>Margen</small><strong>${margin.toFixed(1)}%</strong></div>`;
+  $("#expenseList").innerHTML = state.expenses.filter((item) => inRange(item.date)).sort((a, b) => new Date(b.date) - new Date(a.date)).map((item) => `<div><span><strong>${escapeHtml(item.vendor)}</strong><small>${fmtDate(item.date)} · ${escapeHtml(item.category)} · ${escapeHtml(item.method)}</small></span><strong>${money(item.amount)}</strong><button class="icon-btn" onclick="deleteExpense('${item.id}')">⌫</button></div>`).join("") || `<div class="empty">No hay gastos en este período.</div>`;
+  $("#cashClosingList").innerHTML = state.cashClosings.sort((a, b) => String(b.date).localeCompare(String(a.date))).slice(0, 20).map((item) => `<div><span><strong>${new Date(`${item.date}T12:00:00`).toLocaleDateString("es-US")}</strong><small>Esperado ${money(item.expected)} · Contado ${money(item.counted)}</small></span><strong class="${Number(item.difference) ? "accounting-difference" : ""}">${money(item.difference)}</strong></div>`).join("") || `<div class="empty">No hay cierres registrados.</div>`;
+}
+
+function openExpenseDialog() { $("#expenseId").value = ""; $("#expenseDate").value = localDateTimeValue(new Date()); $("#expenseCategory").value = "Insumos médicos"; $("#expenseVendor").value = ""; $("#expenseAmount").value = ""; $("#expenseMethod").value = "card"; $("#expenseReference").value = ""; $("#expenseNotes").value = ""; $("#expenseDialog").showModal(); }
+async function saveExpense() { const id = $("#expenseId").value || uid(); const data = { id, date: $("#expenseDate").value, category: $("#expenseCategory").value, vendor: $("#expenseVendor").value.trim(), amount: Number($("#expenseAmount").value || 0), method: $("#expenseMethod").value, reference: $("#expenseReference").value.trim(), notes: $("#expenseNotes").value.trim(), createdAt: new Date().toISOString(), createdBy: auth.currentUser.uid }; await getCollectionRef("expenses").doc(id).set(data, { merge: true }); recordActivity({ action: "created", entityType: "expense", entityId: id, title: "Gasto registrado", detail: `${data.vendor} · ${money(data.amount)}` }).catch(console.error); $("#expenseDialog").close(); toast("Gasto registrado."); }
+async function deleteExpense(id) { const item = state.expenses.find((entry) => entry.id === id); if (!item || !confirm(`¿Eliminar el gasto de ${item.vendor}?`)) return; await getCollectionRef("expenses").doc(id).delete(); recordActivity({ action: "deleted", entityType: "expense", entityId: id, title: "Gasto eliminado", detail: `${item.vendor} · ${money(item.amount)}` }).catch(console.error); toast("Gasto eliminado."); }
+
+function openAdjustmentDialog(visitId) { const visit = state.visits.find((item) => item.id === visitId); if (!visit) return; const p = patient(visit.patientId); $("#adjustmentVisitId").value = visitId; $("#adjustmentTitle").textContent = invoiceNumber(visit); $("#adjustmentContext").innerHTML = `<div><small>Paciente</small><strong>${escapeHtml(p?.name || "Paciente")}</strong></div><div><small>Balance</small><strong>${money(balance(visit))}</strong></div><div><small>Pagado neto</small><strong>${money(totalPaid(visit))}</strong></div>`; $("#adjustmentType").value = "discount"; $("#adjustmentAmount").value = ""; $("#adjustmentReason").value = ""; $("#adjustmentNotes").value = ""; $("#adjustmentDialog").showModal(); }
+async function saveAdjustment() { const visit = state.visits.find((item) => item.id === $("#adjustmentVisitId").value); if (!visit) return; const type = $("#adjustmentType").value; const amount = Number($("#adjustmentAmount").value || 0); if (amount <= 0) return toast("Indica un monto válido."); if (["discount", "writeoff"].includes(type) && amount > balance(visit)) return toast("El ajuste no puede superar el balance."); if (type === "refund" && amount > totalPaid(visit)) return toast("El reembolso no puede superar lo pagado."); const id = uid(); const data = { id, visitId: visit.id, patientId: visit.patientId, type, amount, reason: $("#adjustmentReason").value.trim(), notes: $("#adjustmentNotes").value.trim(), date: new Date().toISOString(), createdAt: new Date().toISOString(), createdBy: auth.currentUser.uid }; await getCollectionRef("adjustments").doc(id).set(data); recordActivity({ action: "created", entityType: "adjustment", entityId: id, patientId: visit.patientId, visitId: visit.id, title: type === "refund" ? "Reembolso registrado" : type === "writeoff" ? "Saldo anulado" : "Descuento aplicado", detail: `${money(amount)} · ${data.reason}` }).catch(console.error); $("#adjustmentDialog").close(); toast("Ajuste aplicado."); }
+
+function expectedCashForDate(date) { const cashReceipts = accountingReceipts(date, date, "cash"); const cashExpenses = state.expenses.filter((item) => String(item.date).slice(0, 10) === date && item.method === "cash").reduce((sum, item) => sum + Number(item.amount || 0), 0); return cashReceipts - cashExpenses; }
+function updateCashClosingDifference() { const expected = expectedCashForDate($("#cashClosingDate").value); const counted = Number($("#cashCounted").value || 0); $("#cashExpected").value = expected.toFixed(2); $("#cashDifference").value = (counted - expected).toFixed(2); }
+function openCashClosingDialog() { $("#cashClosingDate").value = localDateValue(); $("#cashCounted").value = ""; $("#cashClosingNotes").value = ""; updateCashClosingDifference(); $("#cashClosingDialog").showModal(); }
+async function saveCashClosing() { const date = $("#cashClosingDate").value; const id = date; const data = { id, date, expected: Number($("#cashExpected").value || 0), counted: Number($("#cashCounted").value || 0), difference: Number($("#cashDifference").value || 0), notes: $("#cashClosingNotes").value.trim(), closedAt: new Date().toISOString(), closedBy: auth.currentUser.uid }; await getCollectionRef("cashClosings").doc(id).set(data, { merge: true }); recordActivity({ action: "closed", entityType: "cash", entityId: id, title: "Cierre de caja registrado", detail: `${date} · Diferencia ${money(data.difference)}` }).catch(console.error); $("#cashClosingDialog").close(); toast("Cierre de caja guardado."); }
+
 function renderSettings() {
   const clinicName = state.settings.clinicName || "Clinic Control";
   $("#clinicBrandName").textContent = clinicName;
@@ -1964,7 +2028,7 @@ async function updateTeamMember(memberId, changes) {
   } catch (error) { console.error(error); toast("No se pudieron actualizar los permisos."); }
 }
 
-const activityIcons = { patient: "●", visit: "◆", appointment: "▦", payment: "$", document: "▤", signature: "✍", task: "✓", alert: "📌", form: "☷", communication: "☎", clinical: "✚", lead: "◇", campaign: "◎", system: "•" };
+const activityIcons = { patient: "●", visit: "◆", appointment: "▦", payment: "$", document: "▤", signature: "✍", task: "✓", alert: "📌", form: "☷", communication: "☎", clinical: "✚", lead: "◇", campaign: "◎", expense: "−", adjustment: "±", cash: "$", system: "•" };
 function renderAuditLogPreview() {
   const box = $("#auditLogPreview"); if (!box) return;
   const rows = state.activities.slice(0, 20);
@@ -2606,6 +2670,7 @@ window.openCommunicationDialog = openCommunicationDialog;
 window.openClinicalRecordDialog = openClinicalRecordDialog;
 window.openLeadDialog = openLeadDialog; window.moveLead = moveLead; window.convertLead = convertLead; window.openCampaignDialog = openCampaignDialog;
 window.bookWaitlist = bookWaitlist; window.removeWaitlist = removeWaitlist;
+window.openAdjustmentDialog = openAdjustmentDialog; window.deleteExpense = deleteExpense;
 
 // El expediente de consulta vive dentro del área principal, no como ventana emergente.
 $(".main").appendChild($("#visitDialog"));
@@ -2651,6 +2716,7 @@ $("#billingDateFrom").addEventListener("change", renderBilling);
 $("#billingDateTo").addEventListener("change", renderBilling);
 $("#billingInsuranceFilter").addEventListener("change", renderBilling);
 $("#quickPaymentBtn").addEventListener("click", () => openPaymentDialog());
+$("#expenseCreateBtn").addEventListener("click", openExpenseDialog); $("#cashClosingCreateBtn").addEventListener("click", openCashClosingDialog);
 $("#printBillingBtn").addEventListener("click", printBillingReport);
 $("#downloadBillingPdfBtn").addEventListener("click", downloadBillingPdf);
 $("#paymentVisit").addEventListener("change", updatePaymentContext);
@@ -2997,6 +3063,10 @@ $("#leadSearch").addEventListener("input", renderCrm); $("#leadSourceFilter").ad
 $("#leadForm").addEventListener("submit", async (event) => { event.preventDefault(); try { await saveLead(); } catch (error) { console.error(error); toast("No se pudo guardar el prospecto."); } });
 $("#campaignForm").addEventListener("submit", async (event) => { event.preventDefault(); try { await saveCampaign(); } catch (error) { console.error(error); toast("No se pudo guardar la campaña."); } });
 $("#waitlistForm").addEventListener("submit", async (event) => { event.preventDefault(); try { await saveWaitlist(); } catch (error) { console.error(error); toast("No se pudo guardar la lista de espera."); } });
+$("#expenseForm").addEventListener("submit", async (event) => { event.preventDefault(); try { await saveExpense(); } catch (error) { console.error(error); toast("No se pudo guardar el gasto."); } });
+$("#adjustmentForm").addEventListener("submit", async (event) => { event.preventDefault(); try { await saveAdjustment(); } catch (error) { console.error(error); toast("No se pudo aplicar el ajuste."); } });
+$("#cashClosingForm").addEventListener("submit", async (event) => { event.preventDefault(); try { await saveCashClosing(); } catch (error) { console.error(error); toast("No se pudo guardar el cierre."); } });
+$("#cashClosingDate").addEventListener("change", updateCashClosingDifference); $("#cashCounted").addEventListener("input", updateCashClosingDifference);
 
 ["clinicName", "invoicePrefix", "invoiceAccentColor", "invoiceLogoPosition", "invoiceFooter"].forEach((id) => {
   document.getElementById(id).addEventListener("input", renderInvoiceStylePreview);
