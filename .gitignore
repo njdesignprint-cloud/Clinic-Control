@@ -7,3 +7,5 @@ serviceAccount*.json
 .env.*
 !.env.example
 firebase-debug.log
+presentation-build/
+output/
