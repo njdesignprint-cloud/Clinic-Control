@@ -124,9 +124,6 @@
         <button class="nav-item" data-page="patients">
           <span>●</span> Pacientes
         </button>
-        <button class="nav-item" data-page="crm">
-          <span>◇</span> CRM
-        </button>
         <button class="nav-item" data-page="appointments">
           <span>▦</span> Citas
         </button>
@@ -702,10 +699,9 @@
           <textarea id="patientNotes" rows="3" placeholder="Información médica o administrativa relevante"></textarea>
           <small class="field-hint">Este campo es opcional</small>
         </label>
-        <div class="form-section-title full"><span>4</span><div><strong>Origen y relación</strong><small>Información CRM para medir captación y retención</small></div></div>
-        <label class="field-group">Fuente de captación<select id="patientSource"><option value="">No indicada</option><option>Google</option><option>Facebook</option><option>Instagram</option><option>Referido</option><option>Sitio web</option><option>Llamada</option><option>Walk-in</option><option>Otro</option></select></label>
-        <label class="field-group">Estado CRM<select id="patientLifecycle"><option value="active">Paciente activo</option><option value="new">Paciente nuevo</option><option value="inactive">Inactivo</option><option value="lost">No regresó</option></select></label>
-        <div class="form-section-title full"><span>5</span><div><strong>Alerta fijada</strong><small>Destaca compromisos de pago u otros asuntos pendientes</small></div></div>
+        <input id="patientSource" type="hidden" value="" />
+        <label class="field-group full">Estado del paciente<select id="patientLifecycle"><option value="active">Activo</option><option value="new">Nuevo</option><option value="inactive">Inactivo</option><option value="lost">No regresó</option></select></label>
+        <div class="form-section-title full"><span>4</span><div><strong>Alerta fijada</strong><small>Destaca compromisos de pago u otros asuntos pendientes</small></div></div>
         <label class="field-group full">Mensaje destacado
           <textarea id="patientAlertMessage" rows="2" placeholder="Ej. El cliente indicó que vendrá mañana a pagar el balance."></textarea>
         </label>
