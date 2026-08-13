@@ -1069,13 +1069,37 @@ function downloadBillingPdf() {
 function renderPaymentHistory() {
   const box = $("#paymentHistory");
   if (!box) return;
-  const payments = [...state.payments].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 30);
+  const query = ($("#billingSearch")?.value || "").toLowerCase().trim();
+  const dateFrom = $("#billingDateFrom")?.value || "";
+  const dateTo = $("#billingDateTo")?.value || "";
+  const insuranceFilter = $("#billingInsuranceFilter")?.value || "";
+  const statusFilter = $("#billingStatusFilter")?.value || "";
+  const recordedPayments = [...state.payments];
+  const initialPayments = state.visits.flatMap((visit) => {
+    const laterTotal = recordedPayments.filter((entry) => entry.visitId === visit.id).reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
+    const initialAmount = Math.max(0, totalPaid(visit) - laterTotal);
+    if (initialAmount <= 0) return [];
+    return [{ id: `initial-${visit.id}`, visitId: visit.id, patientId: visit.patientId, source: paymentType(visit) === "insurance" ? "insurance" : "patient", amount: initialAmount, method: "initial", date: visit.date, reference: "Pago inicial", note: "Registrado con la consulta", initial: true }];
+  });
+  const payments = [...recordedPayments, ...initialPayments].filter((entry) => {
+    const p = patient(entry.patientId);
+    const visit = state.visits.find((item) => item.id === entry.visitId);
+    const entryDate = String(entry.date || "").slice(0, 10);
+    if (dateFrom && entryDate < dateFrom) return false;
+    if (dateTo && entryDate > dateTo) return false;
+    if (insuranceFilter && p?.insuranceCompany !== insuranceFilter) return false;
+    if (statusFilter && financialStatus(visit || {}).key !== statusFilter) return false;
+    if (activeBillingTab === "cash" && paymentType(visit || {}) !== "cash") return false;
+    if (activeBillingTab === "insurance" && paymentType(visit || {}) !== "insurance") return false;
+    if (activeBillingTab === "pending" && balance(visit || {}) <= 0) return false;
+    const searchable = `${p?.name || ""} ${p?.document || ""} ${invoiceNumber(visit || { id: entry.visitId })} ${entry.reference || ""} ${entry.note || ""} ${paymentMethodLabel(entry.method)}`.toLowerCase();
+    return searchable.includes(query);
+  }).sort((a, b) => new Date(b.date) - new Date(a.date));
   box.innerHTML = payments.length ? payments.map((entry) => {
     const p = patient(entry.patientId);
     const visit = state.visits.find((item) => item.id === entry.visitId);
-    const methodLabels = { cash: "Efectivo", card: "Tarjeta", check: "Cheque", transfer: "Transferencia", insurance_eft: "EFT seguro", other: "Otro" };
-    return `<div class="payment-history-row"><div class="payment-source-icon ${entry.source}">${entry.source === "insurance" ? "S" : "$"}</div><div><strong>${escapeHtml(p?.name || "Paciente eliminado")}</strong><span>${fmtDate(entry.date)} · ${escapeHtml(methodLabels[entry.method] || entry.method || "Pago")}${entry.reference ? ` · ${escapeHtml(entry.reference)}` : ""}</span><small>${escapeHtml(invoiceNumber(visit || { id: entry.visitId }))}${entry.note ? ` · ${escapeHtml(entry.note)}` : ""}</small></div><strong>${money(entry.amount)}</strong></div>`;
-  }).join("") : `<div class="empty">Todavía no hay movimientos individuales. Los pagos nuevos aparecerán aquí.</div>`;
+    return `<div class="payment-history-row"><div class="payment-source-icon ${entry.source}">${entry.source === "insurance" ? "S" : "$"}</div><div><strong>${escapeHtml(p?.name || "Paciente eliminado")}</strong><span>${fmtDate(entry.date)} · ${entry.initial ? "Pago inicial" : escapeHtml(paymentMethodLabel(entry.method))}${entry.reference && !entry.initial ? ` · ${escapeHtml(entry.reference)}` : ""}</span><small>${escapeHtml(invoiceNumber(visit || { id: entry.visitId }))}${entry.note ? ` · ${escapeHtml(entry.note)}` : ""}</small></div><strong>${money(entry.amount)}</strong></div>`;
+  }).join("") : `<div class="empty">No hay pagos que coincidan con el cliente y las fechas seleccionadas.</div>`;
 }
 
 function paymentMethodLabel(method) {
