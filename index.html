@@ -498,6 +498,15 @@
             <label><input id="invoiceShowInsurance" type="checkbox" /> Mostrar seguro</label>
           </div>
           <div class="invoice-preview full" id="invoiceStylePreview"></div>
+
+          <div class="settings-section-title full section-spaced"><strong>Documentos para firma</strong><small>Sube los formularios que podrán seleccionarse durante una consulta.</small></div>
+          <div class="document-settings full">
+            <label class="document-upload">Agregar documento
+              <input id="clinicDocumentInput" type="file" accept="application/pdf,.doc,.docx,image/png,image/jpeg" multiple />
+              <small>PDF, Word, PNG o JPG. Máximo 10 MB por archivo.</small>
+            </label>
+            <div id="clinicDocumentsList" class="document-library"></div>
+          </div>
           <button class="btn primary full" type="submit">Guardar cambios</button>
         </form>
       </section>
@@ -601,17 +610,19 @@
     </form>
   </dialog>
 
-  <dialog id="visitDialog">
-    <form id="visitForm" class="modal" method="dialog">
+  <section id="visitDialog" class="page visit-workspace-page">
+    <form id="visitForm" class="visit-workspace-form">
       <div class="modal-head">
         <div>
           <small>Consulta</small>
           <h3 id="visitDialogTitle">Nueva consulta</h3>
         </div>
-        <button type="button" class="close-btn" data-close="visitDialog">×</button>
+        <button type="button" class="btn light" onclick="closeVisitWorkspace()">← Volver a consultas</button>
       </div>
 
       <input type="hidden" id="visitId" />
+
+      <div id="visitPatientBanner" class="visit-patient-banner"></div>
 
       <div class="modal-body">
         <div class="form-section-title"><span>1</span><div><strong>Detalles de la consulta</strong><small>Paciente, modalidad y responsable</small></div></div>
@@ -679,14 +690,17 @@
           <small class="field-hint">Este campo es opcional</small>
         </label>
         </div>
+
+        <div class="form-section-title section-spaced"><span>4</span><div><strong>Documentos para firmar</strong><small>Selecciona los documentos que deberá firmar el paciente</small></div></div>
+        <div id="visitDocuments" class="visit-documents full"></div>
       </div>
 
       <div class="modal-actions">
-        <button type="button" class="btn light" data-close="visitDialog">Cancelar</button>
+        <button type="button" class="btn light" onclick="closeVisitWorkspace()">Cancelar</button>
         <button type="submit" class="btn primary">Guardar consulta</button>
       </div>
     </form>
-  </dialog>
+  </section>
 
   <dialog id="appointmentDialog">
     <form id="appointmentForm" class="modal compact-modal" method="dialog">
@@ -750,11 +764,44 @@
     </div>
   </dialog>
 
+  <dialog id="signatureDialog">
+    <div class="modal signature-modal">
+      <div class="modal-head">
+        <div><small>Firma electrónica</small><h3 id="signatureDialogTitle">Documentos del paciente</h3></div>
+        <button type="button" class="close-btn" data-close="signatureDialog">×</button>
+      </div>
+      <div class="modal-body signature-layout">
+        <aside id="signatureDocumentList" class="signature-document-list"></aside>
+        <section class="signature-workspace">
+          <div id="signatureDocumentContext" class="signature-document-context"></div>
+          <label class="field-group required"><span class="field-label">Nombre de quien firma <b>*</b></span>
+            <input id="signatureSignerName" type="text" autocomplete="name" required />
+          </label>
+          <div class="signature-pad-wrap">
+            <div class="signature-pad-head"><strong>Firma del cliente</strong><button id="clearSignatureBtn" type="button">Limpiar</button></div>
+            <canvas id="signatureCanvas" aria-label="Área para dibujar la firma"></canvas>
+            <small>Firma con el dedo, mouse o lápiz digital dentro del recuadro.</small>
+          </div>
+          <label class="consent-field signature-consent">
+            <input id="signatureConsent" type="checkbox" />
+            <span><strong>Aceptación de firma electrónica</strong><small>Confirmo que esta firma pertenece a la persona indicada y autoriza este documento.</small></span>
+          </label>
+          <div id="savedSignaturePreview" class="saved-signature-preview hidden"></div>
+        </section>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn light" data-close="signatureDialog">Cerrar</button>
+        <button type="button" class="btn primary" id="saveSignatureBtn">Guardar firma</button>
+      </div>
+    </div>
+  </dialog>
+
   <div id="toast"></div>
 
   <script src="https://www.gstatic.com/firebasejs/10.13.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.13.1/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.13.1/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.1/firebase-storage-compat.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="firebase-config.js"></script>
   <script src="app.js"></script>

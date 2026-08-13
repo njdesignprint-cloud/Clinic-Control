@@ -1,15 +1,20 @@
-let state = { settings: {}, patients: [], visits: [], appointments: [], payments: [] };
+let state = { settings: {}, patients: [], visits: [], appointments: [], payments: [], documents: [] };
 let firestore = null;
 let auth = null;
+let storage = null;
 let unsubscribeSettings = null;
 let unsubscribePatients = null;
 let unsubscribeVisits = null;
 let unsubscribeAppointments = null;
 let unsubscribePayments = null;
+let unsubscribeDocuments = null;
 let activeInvoiceId = null;
 let activeBillingTab = "all";
 let activeFinancePatientId = null;
 let pendingAppointmentId = null;
+let activeSignatureVisitId = null;
+let activeSignatureDocumentId = null;
+let signatureHasInk = false;
 let appointmentView = localStorage.getItem("clinicAppointmentView") || "day";
 let currentBillingRows = [];
 
@@ -90,7 +95,8 @@ function initFirebase() {
     console.warn("Persistencia offline no disponible:", error);
   });
 
-  return { firestore, auth };
+  storage = firebase.storage();
+  return { firestore, auth, storage };
 }
 
 function getAuthErrorMessage(error, action = "login") {
@@ -144,11 +150,13 @@ function unsubscribeAll() {
   if (unsubscribeVisits) unsubscribeVisits();
   if (unsubscribeAppointments) unsubscribeAppointments();
   if (unsubscribePayments) unsubscribePayments();
+  if (unsubscribeDocuments) unsubscribeDocuments();
   unsubscribeSettings = null;
   unsubscribePatients = null;
   unsubscribeVisits = null;
   unsubscribeAppointments = null;
   unsubscribePayments = null;
+  unsubscribeDocuments = null;
 }
 
 function showAuthScreen() {
@@ -163,7 +171,7 @@ function showAppScreen() {
 }
 
 function clearState() {
-  state = { settings: {}, patients: [], visits: [], appointments: [], payments: [] };
+  state = { settings: {}, patients: [], visits: [], appointments: [], payments: [], documents: [] };
   render();
 }
 
@@ -175,6 +183,7 @@ function subscribeToRealtime() {
   const visitsRef = getCollectionRef("visits");
   const appointmentsRef = getCollectionRef("appointments");
   const paymentsRef = getCollectionRef("payments");
+  const documentsRef = getCollectionRef("documents");
 
   unsubscribeSettings = settingsRef.onSnapshot((doc) => {
     if (doc.exists) {
@@ -199,6 +208,10 @@ function subscribeToRealtime() {
   unsubscribePayments = paymentsRef.onSnapshot((snapshot) => {
     state.payments = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
     render();
+  });
+  unsubscribeDocuments = documentsRef.orderBy("createdAt", "desc").onSnapshot((snapshot) => {
+    state.documents = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+    renderSettings();
   });
 }
 
@@ -312,6 +325,36 @@ async function registerPayment(data, visit) {
 async function saveSettings() {
   await ensureAuth();
   await getClinicDocRef().collection("settings").doc("clinic").set(state.settings, { merge: true });
+}
+
+async function uploadClinicDocument(file) {
+  await ensureAuth();
+  if (!file) return;
+  const allowed = ["application/pdf", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "image/png", "image/jpeg"];
+  if (!allowed.includes(file.type)) throw new Error(`${file.name}: formato no permitido.`);
+  if (file.size > 10 * 1024 * 1024) throw new Error(`${file.name}: supera el máximo de 10 MB.`);
+  const id = uid();
+  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+  const path = `clinics/${auth.currentUser.uid}/documents/${id}/${safeName}`;
+  const ref = storage.ref(path);
+  await ref.put(file, { contentType: file.type });
+  const url = await ref.getDownloadURL();
+  await getCollectionRef("documents").doc(id).set({ id, name: file.name, type: file.type, size: file.size, path, url, createdAt: new Date().toISOString() });
+}
+
+async function deleteClinicDocument(id) {
+  const documentItem = state.documents.find((item) => item.id === id);
+  if (!documentItem || !confirm(`¿Eliminar ${documentItem.name}?`)) return;
+  try {
+    if (documentItem.path) await storage.ref(documentItem.path).delete().catch((error) => {
+      if (error.code !== "storage/object-not-found") throw error;
+    });
+    await getCollectionRef("documents").doc(id).delete();
+    toast("Documento eliminado");
+  } catch (error) {
+    console.error(error);
+    toast("No se pudo eliminar el documento");
+  }
 }
 
 async function deletePatientEntry(id) {
@@ -511,7 +554,7 @@ function toast(message) {
 
 function showPage(pageId) {
   $$(".page").forEach((page) => page.classList.toggle("active", page.id === pageId));
-  $$(".nav-item").forEach((item) => item.classList.toggle("active", item.dataset.page === pageId));
+  $$(".nav-item").forEach((item) => item.classList.toggle("active", item.dataset.page === (pageId === "visitDialog" ? "visits" : pageId)));
 
   const labels = {
     dashboard: "Dashboard",
@@ -524,7 +567,7 @@ function showPage(pageId) {
     settings: "Ajustes"
   };
 
-  $("#pageTitle").textContent = labels[pageId] || "Clinic Control";
+  $("#pageTitle").textContent = pageId === "visitDialog" ? "Expediente de consulta" : (labels[pageId] || "Clinic Control");
   render();
 }
 
@@ -672,8 +715,12 @@ function renderPatients() {
 }
 
 function renderVisitOptions() {
+  const selectedVisitPatient = $("#visitPatient").value;
+  const selectedAppointmentPatient = $("#appointmentPatient")?.value;
   $("#visitPatient").innerHTML = state.patients.map((p) => `<option value="${p.id}">${p.name}</option>`).join("");
   if ($("#appointmentPatient")) $("#appointmentPatient").innerHTML = state.patients.map((p) => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join("");
+  if (state.patients.some((p) => p.id === selectedVisitPatient)) $("#visitPatient").value = selectedVisitPatient;
+  if (selectedAppointmentPatient && state.patients.some((p) => p.id === selectedAppointmentPatient)) $("#appointmentPatient").value = selectedAppointmentPatient;
   renderAppointmentDoctorOptions();
 }
 
@@ -786,6 +833,8 @@ function renderVisits() {
   $("#visitsTable").innerHTML = rows.length ? rows.map((visit) => {
     const p = patient(visit.patientId);
     const due = balance(visit);
+    const visitDocuments = visit.documents || [];
+    const pendingDocuments = visitDocuments.filter((item) => item.status !== "signed").length;
     return `
       <tr>
         <td>${fmtDate(visit.date)}</td>
@@ -797,6 +846,7 @@ function renderVisits() {
         <td><span class="badge ${due > 0 ? "red" : "green"}">${money(due)}</span></td>
         <td>
           <div class="row-actions">
+            ${visitDocuments.length ? `<button class="icon-btn signature-action ${pendingDocuments ? "has-pending" : "all-signed"}" onclick="openSignatureDialog('${visit.id}')" title="${pendingDocuments ? `${pendingDocuments} documento(s) pendiente(s) de firma` : "Documentos firmados"}">✍</button>` : ""}
             <button class="icon-btn" onclick="editVisit('${visit.id}')" title="Editar">✎</button>
             <button class="icon-btn" onclick="deleteVisit('${visit.id}')" title="Eliminar">⌫</button>
           </div>
@@ -1293,6 +1343,145 @@ function renderSettings() {
     ? `<img src="${state.settings.clinicLogo}" alt="Logo de la clínica" />`
     : `<span>Sin logo</span>`;
   renderInvoiceStylePreview();
+  renderClinicDocuments();
+}
+
+function formatFileSize(bytes) {
+  if (!bytes) return "";
+  return bytes < 1024 * 1024 ? `${Math.ceil(bytes / 1024)} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function renderClinicDocuments() {
+  const box = $("#clinicDocumentsList");
+  if (!box) return;
+  box.innerHTML = state.documents.length ? state.documents.map((item) => `
+    <div class="document-row">
+      <span class="document-icon">${item.type === "application/pdf" ? "PDF" : "DOC"}</span>
+      <div><strong>${escapeHtml(item.name)}</strong><small>${formatFileSize(item.size)} · Disponible en consultas</small></div>
+      <a class="btn light" href="${escapeHtml(item.url)}" target="_blank" rel="noopener">Abrir</a>
+      <button class="btn light document-delete" type="button" onclick="deleteClinicDocument('${item.id}')">Eliminar</button>
+    </div>`).join("") : `<div class="empty document-empty">Todavía no hay documentos cargados.</div>`;
+}
+
+function renderVisitDocuments(selectedDocuments = []) {
+  const box = $("#visitDocuments");
+  const prior = new Map((selectedDocuments || []).map((item) => [item.documentId, item]));
+  const available = state.documents.map((item) => ({ ...item, ...(prior.get(item.id) || {}) }));
+  const archivedSigned = (selectedDocuments || []).filter((item) => item.status === "signed" && !state.documents.some((documentItem) => documentItem.id === item.documentId));
+  const choices = [...available, ...archivedSigned.map((item) => ({ id: item.documentId, ...item, archived: true }))];
+  box.innerHTML = choices.length ? choices.map((item) => `
+    <label class="document-choice">
+      <input type="checkbox" value="${item.id}" ${prior.has(item.id) || item.status === "signed" ? "checked" : ""} ${item.status === "signed" ? "disabled" : ""} />
+      <span><strong>${escapeHtml(item.name)}</strong><small>${item.status === "signed" ? `Firmado por ${escapeHtml(item.signedBy)}` : "Quedará pendiente de firma"}${item.archived ? " · Archivado" : ""}</small></span>
+      ${item.url ? `<a href="${escapeHtml(item.url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">Ver</a>` : ""}
+    </label>`).join("") : `<div class="empty document-empty">No hay documentos disponibles. Súbelos primero desde Ajustes.</div>`;
+}
+
+function collectVisitDocuments(existing = []) {
+  const prior = new Map((existing || []).map((item) => [item.documentId, item]));
+  return [...$("#visitDocuments").querySelectorAll('input[type="checkbox"]:checked')].map((input) => {
+    const item = state.documents.find((documentItem) => documentItem.id === input.value);
+    const previous = prior.get(input.value) || {};
+    return { ...previous, documentId: input.value, name: item?.name || previous.name || "Documento", url: item?.url || previous.url || "", status: previous.status || "pending" };
+  });
+}
+
+function currentSignatureVisit() {
+  return state.visits.find((visit) => visit.id === activeSignatureVisitId);
+}
+
+function currentSignatureDocument() {
+  return currentSignatureVisit()?.documents?.find((item) => item.documentId === activeSignatureDocumentId);
+}
+
+function openSignatureDialog(visitId) {
+  const visit = state.visits.find((item) => item.id === visitId);
+  if (!visit?.documents?.length) return toast("Esta consulta no tiene documentos asignados.");
+  activeSignatureVisitId = visitId;
+  activeSignatureDocumentId = visit.documents.find((item) => item.status !== "signed")?.documentId || visit.documents[0].documentId;
+  const p = patient(visit.patientId);
+  $("#signatureDialogTitle").textContent = p?.name || "Firma del paciente";
+  $("#signatureSignerName").value = p?.name || "";
+  $("#signatureConsent").checked = false;
+  $("#signatureDialog").showModal();
+  renderSignatureDialog();
+}
+
+function selectSignatureDocument(documentId) {
+  activeSignatureDocumentId = documentId;
+  $("#signatureConsent").checked = false;
+  renderSignatureDialog();
+}
+
+function renderSignatureDialog() {
+  const visit = currentSignatureVisit();
+  const documentItem = currentSignatureDocument();
+  if (!visit || !documentItem) return;
+  $("#signatureDocumentList").innerHTML = visit.documents.map((item) => `
+    <button type="button" class="signature-document-item ${item.documentId === activeSignatureDocumentId ? "active" : ""}" onclick="selectSignatureDocument('${item.documentId}')">
+      <span>${item.status === "signed" ? "✓" : "○"}</span><div><strong>${escapeHtml(item.name)}</strong><small>${item.status === "signed" ? `Firmado ${fmtDate(item.signedAt)}` : "Pendiente de firma"}</small></div>
+    </button>`).join("");
+  $("#signatureDocumentContext").innerHTML = `<div><small>Documento seleccionado</small><strong>${escapeHtml(documentItem.name)}</strong></div>${documentItem.url ? `<a class="btn light" href="${escapeHtml(documentItem.url)}" target="_blank" rel="noopener">Abrir documento</a>` : ""}`;
+  const preview = $("#savedSignaturePreview");
+  preview.classList.toggle("hidden", documentItem.status !== "signed");
+  preview.innerHTML = documentItem.status === "signed" ? `<small>Firma guardada</small><img src="${escapeHtml(documentItem.signatureUrl)}" alt="Firma de ${escapeHtml(documentItem.signedBy)}" /><strong>${escapeHtml(documentItem.signedBy)}</strong><span>${new Date(documentItem.signedAt).toLocaleString("es-US")}</span>` : "";
+  $("#saveSignatureBtn").textContent = documentItem.status === "signed" ? "Reemplazar firma" : "Guardar firma";
+  requestAnimationFrame(setupSignatureCanvas);
+}
+
+function setupSignatureCanvas() {
+  const canvas = $("#signatureCanvas");
+  const width = Math.max(280, canvas.parentElement.clientWidth - 2);
+  const height = 210;
+  const ratio = window.devicePixelRatio || 1;
+  canvas.width = width * ratio;
+  canvas.height = height * ratio;
+  canvas.style.width = `${width}px`;
+  canvas.style.height = `${height}px`;
+  const context = canvas.getContext("2d");
+  context.scale(ratio, ratio);
+  context.lineCap = "round";
+  context.lineJoin = "round";
+  context.lineWidth = 2.4;
+  context.strokeStyle = "#172033";
+  signatureHasInk = false;
+}
+
+function clearSignatureCanvas() {
+  setupSignatureCanvas();
+}
+
+async function saveCurrentSignature() {
+  const visit = currentSignatureVisit();
+  const documentItem = currentSignatureDocument();
+  const signedBy = $("#signatureSignerName").value.trim();
+  if (!signedBy) return toast("Escribe el nombre de quien firma.");
+  if (!signatureHasInk) return toast("Dibuja la firma antes de guardarla.");
+  if (!$("#signatureConsent").checked) return toast("Confirma la aceptación de la firma electrónica.");
+  const button = $("#saveSignatureBtn");
+  try {
+    button.disabled = true;
+    const canvas = $("#signatureCanvas");
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+    const signatureId = uid();
+    const path = `clinics/${auth.currentUser.uid}/signatures/${visit.id}/${documentItem.documentId}/${signatureId}.png`;
+    const ref = storage.ref(path);
+    await ref.put(blob, { contentType: "image/png" });
+    const signatureUrl = await ref.getDownloadURL();
+    const signedAt = new Date().toISOString();
+    const documents = visit.documents.map((item) => item.documentId === documentItem.documentId ? { ...item, status: "signed", signedBy, signedAt, signatureUrl, signaturePath: path, consentAccepted: true, signedByUserId: auth.currentUser.uid } : item);
+    await saveVisit({ id: visit.id, documents });
+    if (documentItem.signaturePath && documentItem.signaturePath !== path) storage.ref(documentItem.signaturePath).delete().catch(() => {});
+    visit.documents = documents;
+    renderSignatureDialog();
+    renderVisits();
+    toast("Firma guardada correctamente");
+  } catch (error) {
+    console.error(error);
+    toast("No se pudo guardar la firma");
+  } finally {
+    button.disabled = false;
+  }
 }
 
 function renderInvoiceStylePreview() {
@@ -1487,9 +1676,33 @@ function openVisitDialog(visit = null) {
   toggleVisitInsuranceFields();
   $("#visitReason").value = visit?.reason || "";
   $("#visitNotes").value = visit?.notes || "";
+  renderVisitDocuments(visit?.documents || []);
+  renderVisitPatientBanner();
   clearFormErrors($("#visitForm"));
-  $("#visitDialog").showModal();
+  showPage("visitDialog");
+  window.scrollTo({ top: 0, behavior: "smooth" });
   requestAnimationFrame(() => $("#visitPatient").focus());
+}
+
+function renderVisitPatientBanner() {
+  const p = patient($("#visitPatient").value);
+  const banner = $("#visitPatientBanner");
+  if (!p) {
+    banner.innerHTML = `<div class="patient-avatar">?</div><div><small>Paciente</small><strong>Selecciona un paciente</strong></div>`;
+    return;
+  }
+  const initials = p.name.split(/\s+/).slice(0, 2).map((part) => part[0]).join("").toUpperCase();
+  banner.innerHTML = `
+    <div class="patient-avatar">${escapeHtml(initials)}</div>
+    <div class="patient-banner-name"><small>Expediente del paciente</small><strong>${escapeHtml(p.name)}</strong><span>${escapeHtml(p.document || "Sin documento")}</span></div>
+    <div><small>Edad</small><strong>${escapeHtml(p.age || "—")}</strong></div>
+    <div><small>Teléfono</small><strong>${escapeHtml(p.phone || "—")}</strong></div>
+    <div><small>Seguro</small><strong>${escapeHtml(p.insuranceCompany || (p.payerType === "insurance" ? "Registrado" : "Pago propio"))}</strong></div>`;
+}
+
+function closeVisitWorkspace() {
+  pendingAppointmentId = null;
+  showPage("visits");
 }
 
 function renderVisitLineItems(items = []) {
@@ -1685,6 +1898,13 @@ window.setAppointmentStatus = setAppointmentStatus;
 window.startAppointmentVisit = startAppointmentVisit;
 window.openPaymentDialog = openPaymentDialog;
 window.openPatientFinance = openPatientFinance;
+window.deleteClinicDocument = deleteClinicDocument;
+window.openSignatureDialog = openSignatureDialog;
+window.selectSignatureDocument = selectSignatureDocument;
+window.closeVisitWorkspace = closeVisitWorkspace;
+
+// El expediente de consulta vive dentro del área principal, no como ventana emergente.
+$(".main").appendChild($("#visitDialog"));
 
 $$(".nav-item").forEach((button) => button.addEventListener("click", () => showPage(button.dataset.page)));
 $$("[data-go]").forEach((button) => button.addEventListener("click", () => showPage(button.dataset.go)));
@@ -1792,6 +2012,7 @@ $("#visitPatient").addEventListener("change", () => {
     $("#visitPaymentType").value = patient($("#visitPatient").value)?.payerType === "insurance" ? "insurance" : "cash";
     toggleVisitInsuranceFields();
   }
+  renderVisitPatientBanner();
 });
 $("#visitTotal").addEventListener("input", validateVisitForm);
 $("#visitReason").addEventListener("input", validateVisitForm);
@@ -1910,7 +2131,8 @@ $("#visitForm").addEventListener("submit", async (event) => {
     claimStatus: $("#visitPaymentType").value === "insurance" ? $("#visitClaimStatus").value : "",
     claimNumber: $("#visitPaymentType").value === "insurance" ? $("#visitClaimNumber").value.trim() : "",
     copay: $("#visitPaymentType").value === "insurance" ? Number($("#visitCopay").value || 0) : 0,
-    appointmentId: existingVisit?.appointmentId || pendingAppointmentId || ""
+    appointmentId: existingVisit?.appointmentId || pendingAppointmentId || "",
+    documents: collectVisitDocuments(existingVisit?.documents)
   };
 
   try {
@@ -1920,7 +2142,7 @@ $("#visitForm").addEventListener("submit", async (event) => {
       if (appointment) await saveAppointment({ ...appointment, status: "completed", visitId: data.id, updatedAt: new Date().toISOString() });
     }
     pendingAppointmentId = null;
-    $("#visitDialog").close();
+    showPage("visits");
     render();
     toast(id ? "Consulta actualizada" : "Consulta registrada");
   } catch (error) {
@@ -1969,6 +2191,55 @@ $("#clinicLogoInput").addEventListener("change", async (event) => {
     toast(error.message);
   }
 });
+
+$("#clinicDocumentInput").addEventListener("change", async (event) => {
+  const files = [...event.target.files];
+  if (!files.length) return;
+  try {
+    event.target.disabled = true;
+    for (const file of files) await uploadClinicDocument(file);
+    toast(`${files.length} documento(s) cargado(s)`);
+  } catch (error) {
+    console.error(error);
+    toast(error.message || "No se pudieron subir los documentos");
+  } finally {
+    event.target.disabled = false;
+    event.target.value = "";
+  }
+});
+
+$("#clearSignatureBtn").addEventListener("click", clearSignatureCanvas);
+$("#saveSignatureBtn").addEventListener("click", saveCurrentSignature);
+
+(() => {
+  const canvas = $("#signatureCanvas");
+  let drawing = false;
+  const point = (event) => {
+    const rect = canvas.getBoundingClientRect();
+    return { x: event.clientX - rect.left, y: event.clientY - rect.top };
+  };
+  canvas.addEventListener("pointerdown", (event) => {
+    drawing = true;
+    canvas.setPointerCapture(event.pointerId);
+    const context = canvas.getContext("2d");
+    const current = point(event);
+    context.beginPath();
+    context.moveTo(current.x, current.y);
+    event.preventDefault();
+  });
+  canvas.addEventListener("pointermove", (event) => {
+    if (!drawing) return;
+    const current = point(event);
+    const context = canvas.getContext("2d");
+    context.lineTo(current.x, current.y);
+    context.stroke();
+    signatureHasInk = true;
+    event.preventDefault();
+  });
+  const stopDrawing = () => { drawing = false; };
+  canvas.addEventListener("pointerup", stopDrawing);
+  canvas.addEventListener("pointercancel", stopDrawing);
+})();
 
 $("#removeClinicLogo").addEventListener("click", () => {
   state.settings.clinicLogo = "";
