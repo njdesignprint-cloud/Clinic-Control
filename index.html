@@ -333,6 +333,20 @@
         <div id="appointmentAgenda" class="appointment-agenda"></div>
       </section>
 
+      <section class="page patient-record-page" id="patientRecord">
+        <div class="patient-record-shell">
+          <header id="patientRecordHeader" class="patient-record-header"></header>
+          <nav class="patient-record-tabs" role="tablist" aria-label="Expediente del paciente">
+            <button type="button" class="active" data-patient-record-tab="summary">Resumen</button>
+            <button type="button" data-patient-record-tab="visits">Consultas</button>
+            <button type="button" data-patient-record-tab="documents">Documentos</button>
+            <button type="button" data-patient-record-tab="payments">Pagos</button>
+            <button type="button" data-patient-record-tab="alerts">Alertas</button>
+          </nav>
+          <div id="patientRecordContent" class="patient-record-content"></div>
+        </div>
+      </section>
+
       <section class="page" id="visits">
         <div class="section-top">
           <div>

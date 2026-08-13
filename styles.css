@@ -1633,6 +1633,37 @@ td small {
 .patient-alert-chip small { color: #b45309; }
 .patient-finance-alert { display: flex; justify-content: space-between; gap: 14px; align-items: center; margin-bottom: 16px; padding: 14px 16px; border: 1px solid #fdba74; border-radius: 14px; color: #9a3412; background: #fff7ed; }
 .patient-finance-alert > div { display: grid; gap: 4px; }
+.patient-name-link { padding: 0; border: 0; color: var(--primary); background: transparent; font: inherit; font-weight: 850; text-align: left; cursor: pointer; }
+.patient-record-shell { overflow: hidden; border: 1px solid var(--line); border-radius: 22px; background: white; box-shadow: var(--shadow); }
+.patient-record-header { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; gap: 16px; align-items: center; padding: 22px 24px; color: white; background: linear-gradient(115deg, #0f766e, #0891b2); }
+.patient-record-header > .btn.light { color: white; border-color: rgba(255,255,255,.45); background: rgba(255,255,255,.12); }
+.patient-record-avatar { display: grid; place-items: center; width: 58px; height: 58px; border-radius: 50%; color: var(--primary); background: white; font-weight: 900; }
+.patient-record-identity { min-width: 0; }
+.patient-record-identity h2 { margin: 2px 0; font-size: 24px; }
+.patient-record-identity small, .patient-record-identity span { color: rgba(255,255,255,.78); }
+.patient-record-actions { display: flex; gap: 8px; }
+.patient-record-tabs { display: flex; gap: 2px; padding: 0 20px; overflow-x: auto; border-bottom: 1px solid var(--line); background: #f8fafc; }
+.patient-record-tabs button { padding: 15px 17px; border: 0; border-bottom: 3px solid transparent; color: var(--muted); background: transparent; font-weight: 800; cursor: pointer; }
+.patient-record-tabs button.active { color: var(--primary); border-bottom-color: var(--primary); }
+.patient-record-content { min-height: 420px; padding: 24px; }
+.patient-record-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 20px; }
+.patient-record-metrics > div { display: grid; gap: 5px; padding: 16px; border-radius: 15px; background: #f1f5f9; }
+.patient-record-metrics small { color: var(--muted); }
+.patient-record-metrics strong { font-size: 22px; }
+.patient-record-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.patient-record-grid article { padding: 20px; border: 1px solid var(--line); border-radius: 16px; }
+.patient-record-grid h3 { margin-top: 0; }
+.patient-record-grid dl { display: grid; gap: 10px; }
+.patient-record-grid dl div { display: flex; justify-content: space-between; gap: 15px; padding-bottom: 8px; border-bottom: 1px solid #eef2f7; }
+.patient-record-grid dt { color: var(--muted); }
+.patient-record-grid dd { margin: 0; font-weight: 750; text-align: right; }
+.patient-record-list { display: grid; gap: 9px; }
+.patient-record-list > div { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 14px; align-items: center; padding: 14px; border: 1px solid var(--line); border-radius: 14px; }
+.patient-record-list span { display: grid; gap: 3px; }
+.patient-record-list small { color: var(--muted); }
+.patient-alert-detail { display: grid; grid-template-columns: auto 1fr auto; gap: 16px; align-items: center; padding: 22px; border: 1px solid #fdba74; border-radius: 16px; color: #9a3412; background: #fff7ed; }
+.patient-alert-detail > span { font-size: 28px; }
+.patient-alert-detail h3, .patient-alert-detail p { margin: 0; }
 .visit-workspace-form > .modal-body {
   display: block;
   flex: 1;
@@ -1760,6 +1791,13 @@ td small {
   .visit-patient-banner > div:not(.patient-avatar):not(.patient-banner-name) { display: none; }
   .visit-patient-banner > .patient-banner-alert { display: grid !important; grid-column: 1 / -1; }
   .patient-finance-alert { align-items: stretch; flex-direction: column; }
+  .patient-record-header { grid-template-columns: auto 1fr; }
+  .patient-record-header > .btn.light, .patient-record-actions { grid-column: 1 / -1; }
+  .patient-record-actions { display: grid; grid-template-columns: 1fr 1fr; }
+  .patient-record-metrics, .patient-record-grid { grid-template-columns: 1fr; }
+  .patient-record-list > div { grid-template-columns: 1fr auto; }
+  .patient-alert-detail { grid-template-columns: auto 1fr; }
+  .patient-alert-detail .btn { grid-column: 1 / -1; }
   .visit-workspace-form > .modal-body { padding: 14px; }
   .visit-payment-summary { grid-template-columns: 1fr; }
   .visit-payment-entry { grid-template-columns: 1fr auto; }

@@ -11,6 +11,8 @@ let unsubscribeDocuments = null;
 let activeInvoiceId = null;
 let activeBillingTab = "all";
 let activeFinancePatientId = null;
+let activePatientRecordId = null;
+let activePatientRecordTab = "summary";
 let pendingAppointmentId = null;
 let activeSignatureVisitId = null;
 let activeSignatureDocumentId = null;
@@ -556,7 +558,7 @@ function toast(message) {
 
 function showPage(pageId) {
   $$(".page").forEach((page) => page.classList.toggle("active", page.id === pageId));
-  $$(".nav-item").forEach((item) => item.classList.toggle("active", item.dataset.page === (pageId === "visitDialog" ? "visits" : pageId)));
+  $$(".nav-item").forEach((item) => item.classList.toggle("active", item.dataset.page === (pageId === "visitDialog" ? "visits" : pageId === "patientRecord" ? "patients" : pageId)));
 
   const labels = {
     dashboard: "Dashboard",
@@ -569,7 +571,7 @@ function showPage(pageId) {
     settings: "Ajustes"
   };
 
-  $("#pageTitle").textContent = pageId === "visitDialog" ? "Expediente de consulta" : (labels[pageId] || "Clinic Control");
+  $("#pageTitle").textContent = pageId === "visitDialog" ? "Expediente de consulta" : pageId === "patientRecord" ? "Expediente del paciente" : (labels[pageId] || "Clinic Control");
   render();
 }
 
@@ -584,6 +586,7 @@ function render() {
   renderInvoices();
   renderReports();
   renderSettings();
+  if ($("#patientRecord")?.classList.contains("active") && activePatientRecordId) renderPatientRecord();
 }
 
 function renderDashboard() {
@@ -699,7 +702,7 @@ function renderPatients() {
 
   $("#patientsTable").innerHTML = rows.length ? rows.map((p) => `
     <tr class="${patientHasAlert(p) ? "patient-alert-row" : ""}">
-      <td><strong>${p.name}</strong>${patientHasAlert(p) ? `<div class="patient-alert-chip">📌 ${escapeHtml(p.patientAlertMessage)} <small>${patientAlertDateLabel(p)}</small></div>` : `<br><small>${p.notes || "Sin notas"}</small>`}<br><span class="badge ${p.payerType === "insurance" ? "blue" : "green"}">${escapeHtml(payerLabel(p))}</span></td>
+      <td><button class="patient-name-link" onclick="openPatientRecord('${p.id}')">${escapeHtml(p.name)}</button>${patientHasAlert(p) ? `<div class="patient-alert-chip">📌 ${escapeHtml(p.patientAlertMessage)} <small>${patientAlertDateLabel(p)}</small></div>` : `<br><small>${p.notes || "Sin notas"}</small>`}<br><span class="badge ${p.payerType === "insurance" ? "blue" : "green"}">${escapeHtml(payerLabel(p))}</span></td>
       <td>${p.phone || "-"}<br><small>${p.email || "Sin correo"}</small></td>
       <td>${fmtBirthDate(p.birthDate)}<br><small>${p.age !== "" && p.age != null ? `${p.age} años` : "Edad no indicada"}</small></td>
       <td><span class="badge blue">${p.language || "No indicado"}</span></td>
@@ -736,6 +739,44 @@ function patientAlertDateLabel(p) {
   return `${overdue ? "Vencida · " : "Seguimiento · "}${new Date(`${p.patientAlertDate}T12:00:00`).toLocaleDateString("es-US")}`;
 }
 
+function openPatientRecord(id, tabName = "summary") {
+  if (!patient(id)) return;
+  activePatientRecordId = id;
+  activePatientRecordTab = tabName;
+  showPage("patientRecord");
+  renderPatientRecord();
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+function renderPatientRecord() {
+  const p = patient(activePatientRecordId);
+  if (!p) return showPage("patients");
+  const visits = state.visits.filter((visit) => visit.patientId === p.id).sort((a, b) => new Date(b.date) - new Date(a.date));
+  const recordedPayments = state.payments.filter((entry) => entry.patientId === p.id);
+  const initialPayments = visits.flatMap((visit) => {
+    const laterTotal = recordedPayments.filter((entry) => entry.visitId === visit.id).reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
+    const amount = Math.max(0, totalPaid(visit) - laterTotal);
+    return amount > 0 ? [{ id: `initial-${visit.id}`, visitId: visit.id, patientId: p.id, amount, method: "initial", date: visit.date, reference: "Pago inicial" }] : [];
+  });
+  const payments = [...recordedPayments, ...initialPayments].sort((a, b) => new Date(b.date) - new Date(a.date));
+  const docs = visits.flatMap((visit) => (visit.documents || []).map((doc) => ({ ...doc, visit })));
+  const data = totals(visits);
+  const initials = p.name.split(/\s+/).slice(0, 2).map((part) => part[0]).join("").toUpperCase();
+  $("#patientRecordHeader").innerHTML = `<button class="btn light" onclick="showPage('patients')">← Pacientes</button><div class="patient-record-avatar">${escapeHtml(initials)}</div><div class="patient-record-identity"><small>Expediente del paciente</small><h2>${escapeHtml(p.name)}</h2><span>${escapeHtml([p.document, p.phone, p.email].filter(Boolean).join(" · ") || "Información de contacto no indicada")}</span></div><div class="patient-record-actions"><button class="btn light" onclick="editPatient('${p.id}')">Editar</button><button class="btn primary" onclick="openVisitDialog({patientId:'${p.id}'})">Nueva consulta</button></div>`;
+  $$('[data-patient-record-tab]').forEach((button) => button.classList.toggle("active", button.dataset.patientRecordTab === activePatientRecordTab));
+  const summary = `${patientHasAlert(p) ? `<div class="patient-finance-alert"><div><strong>📌 ${escapeHtml(p.patientAlertMessage)}</strong><span>${patientAlertDateLabel(p)}</span></div><button class="btn light" onclick="resolvePatientAlert('${p.id}')">Marcar resuelta</button></div>` : ""}<div class="patient-record-metrics"><div><small>Consultas</small><strong>${visits.length}</strong></div><div><small>Facturado</small><strong>${money(data.billed)}</strong></div><div><small>Pagado</small><strong>${money(data.paid)}</strong></div><div><small>Balance</small><strong>${money(data.debt)}</strong></div></div><div class="patient-record-grid"><article><h3>Información</h3><dl><div><dt>Nacimiento</dt><dd>${fmtBirthDate(p.birthDate)}</dd></div><div><dt>Edad</dt><dd>${escapeHtml(p.age || "—")}</dd></div><div><dt>Idioma</dt><dd>${escapeHtml(p.language || "—")}</dd></div><div><dt>Forma de pago</dt><dd>${escapeHtml(payerLabel(p))}</dd></div><div><dt>Seguro</dt><dd>${escapeHtml(p.insuranceCompany || "—")}</dd></div></dl></article><article><h3>Notas</h3><p>${escapeHtml(p.notes || "No hay notas generales para este paciente.")}</p></article></div>`;
+  const visitHtml = visits.length ? `<div class="patient-record-list">${visits.map((visit) => `<div><span><strong>${fmtDate(visit.date)} · ${escapeHtml(visit.reason || "Consulta")}</strong><small>${escapeHtml(visit.doctor || "Sin profesional")} · ${escapeHtml(invoiceNumber(visit))}</small></span><span><strong>${money(visit.total)}</strong><small>Balance ${money(balance(visit))}</small></span><button class="btn light" onclick="editVisit('${visit.id}')">Abrir</button></div>`).join("")}</div>` : `<div class="empty">Este paciente todavía no tiene consultas.</div>`;
+  const documentHtml = docs.length ? `<div class="patient-record-list">${docs.map((doc) => `<div><span><strong>${escapeHtml(doc.name)}</strong><small>${fmtDate(doc.visit.date)} · ${doc.status === "signed" ? `Firmado por ${escapeHtml(doc.signedBy)}` : "Pendiente de firma"}</small></span><span class="badge ${doc.status === "signed" ? "green" : "red"}">${doc.status === "signed" ? "Firmado" : "Pendiente"}</span>${doc.url ? `<a class="btn light" href="${escapeHtml(doc.url)}" target="_blank" rel="noopener">Ver</a>` : ""}</div>`).join("")}</div>` : `<div class="empty">No hay documentos asignados.</div>`;
+  const paymentHtml = `<div class="patient-record-metrics"><div><small>Facturado</small><strong>${money(data.billed)}</strong></div><div><small>Pagado</small><strong>${money(data.paid)}</strong></div><div><small>Balance</small><strong>${money(data.debt)}</strong></div></div>${payments.length ? `<div class="patient-record-list">${payments.map((entry) => `<div><span><strong>${fmtDate(entry.date)} · ${escapeHtml(paymentMethodLabel(entry.method))}</strong><small>${escapeHtml(entry.reference || "Sin referencia")}${entry.note ? ` · ${escapeHtml(entry.note)}` : ""}</small></span><strong>${money(entry.amount)}</strong><button class="btn light" onclick="openInvoice('${entry.visitId}')">Factura</button></div>`).join("")}</div>` : `<div class="empty">No hay abonos posteriores registrados.</div>`}`;
+  const alertHtml = patientHasAlert(p) ? `<div class="patient-alert-detail"><span>📌</span><div><h3>${escapeHtml(p.patientAlertMessage)}</h3><p>${patientAlertDateLabel(p)}</p></div><button class="btn primary" onclick="resolvePatientAlert('${p.id}')">Marcar resuelta</button></div>` : `<div class="empty"><strong>Sin alertas activas</strong><br>Edita el paciente para fijar un compromiso o seguimiento.</div>`;
+  $("#patientRecordContent").innerHTML = { summary, visits: visitHtml, documents: documentHtml, payments: paymentHtml, alerts: alertHtml }[activePatientRecordTab] || summary;
+}
+
+function selectPatientRecordTab(tabName) {
+  activePatientRecordTab = tabName;
+  renderPatientRecord();
+}
+
 async function resolvePatientAlert(id) {
   const p = patient(id);
   if (!p) return;
@@ -745,6 +786,7 @@ async function resolvePatientAlert(id) {
     render();
     if ($("#visitDialog")?.classList.contains("active") && $("#visitPatient")?.value === id) renderVisitPatientBanner();
     if ($("#patientFinanceDialog")?.open) openPatientFinance(id);
+    if (activePatientRecordId === id && $("#patientRecord")?.classList.contains("active")) renderPatientRecord();
     toast("Alerta marcada como resuelta");
   } catch (error) { console.error(error); toast("No se pudo resolver la alerta"); }
 }
@@ -1986,6 +2028,8 @@ window.openSignatureDialog = openSignatureDialog;
 window.selectSignatureDocument = selectSignatureDocument;
 window.closeVisitWorkspace = closeVisitWorkspace;
 window.resolvePatientAlert = resolvePatientAlert;
+window.openPatientRecord = openPatientRecord;
+window.selectPatientRecordTab = selectPatientRecordTab;
 
 // El expediente de consulta vive dentro del área principal, no como ventana emergente.
 $(".main").appendChild($("#visitDialog"));
@@ -2040,6 +2084,7 @@ $$('[data-billing-tab]').forEach((button) => button.addEventListener("click", ()
   $$('[data-billing-tab]').forEach((tab) => tab.classList.toggle("active", tab === button));
   renderBilling();
 }));
+$$('[data-patient-record-tab]').forEach((button) => button.addEventListener("click", () => selectPatientRecordTab(button.dataset.patientRecordTab)));
 $("#downloadInvoiceBtn").addEventListener("click", () => downloadInvoicePdf());
 
 $("#appointmentSearch").addEventListener("input", renderAppointments);
