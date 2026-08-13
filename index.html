@@ -600,6 +600,17 @@
           <textarea id="patientNotes" rows="3" placeholder="Información médica o administrativa relevante"></textarea>
           <small class="field-hint">Este campo es opcional</small>
         </label>
+        <div class="form-section-title full"><span>4</span><div><strong>Alerta fijada</strong><small>Destaca compromisos de pago u otros asuntos pendientes</small></div></div>
+        <label class="field-group full">Mensaje destacado
+          <textarea id="patientAlertMessage" rows="2" placeholder="Ej. El cliente indicó que vendrá mañana a pagar el balance."></textarea>
+        </label>
+        <label class="field-group">Fecha prometida o de seguimiento
+          <input id="patientAlertDate" type="date" />
+        </label>
+        <label class="consent-field">
+          <input id="patientAlertActive" type="checkbox" />
+          <span><strong>Mantener alerta activa</strong><small>Aparecerá destacada al abrir este paciente.</small></span>
+        </label>
         </div>
       </div>
 

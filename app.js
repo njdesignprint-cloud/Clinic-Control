@@ -695,11 +695,11 @@ function renderFinanceBars(data) {
 
 function renderPatients() {
   const query = ($("#patientSearch")?.value || "").toLowerCase().trim();
-  const rows = state.patients.filter((p) => `${p.name} ${p.phone} ${p.email || ""} ${p.document} ${p.language || ""} ${p.notes || ""} ${p.insuranceCompany || ""} ${p.insuranceMemberId || ""} ${p.insuranceGroup || ""}`.toLowerCase().includes(query));
+  const rows = state.patients.filter((p) => `${p.name} ${p.phone} ${p.email || ""} ${p.document} ${p.language || ""} ${p.notes || ""} ${p.patientAlertMessage || ""} ${p.insuranceCompany || ""} ${p.insuranceMemberId || ""} ${p.insuranceGroup || ""}`.toLowerCase().includes(query));
 
   $("#patientsTable").innerHTML = rows.length ? rows.map((p) => `
-    <tr>
-      <td><strong>${p.name}</strong><br><small>${p.notes || "Sin notas"}</small><br><span class="badge ${p.payerType === "insurance" ? "blue" : "green"}">${escapeHtml(payerLabel(p))}</span></td>
+    <tr class="${patientHasAlert(p) ? "patient-alert-row" : ""}">
+      <td><strong>${p.name}</strong>${patientHasAlert(p) ? `<div class="patient-alert-chip">📌 ${escapeHtml(p.patientAlertMessage)} <small>${patientAlertDateLabel(p)}</small></div>` : `<br><small>${p.notes || "Sin notas"}</small>`}<br><span class="badge ${p.payerType === "insurance" ? "blue" : "green"}">${escapeHtml(payerLabel(p))}</span></td>
       <td>${p.phone || "-"}<br><small>${p.email || "Sin correo"}</small></td>
       <td>${fmtBirthDate(p.birthDate)}<br><small>${p.age !== "" && p.age != null ? `${p.age} años` : "Edad no indicada"}</small></td>
       <td><span class="badge blue">${p.language || "No indicado"}</span></td>
@@ -724,6 +724,29 @@ function renderVisitOptions() {
   if (state.patients.some((p) => p.id === selectedVisitPatient)) $("#visitPatient").value = selectedVisitPatient;
   if (selectedAppointmentPatient && state.patients.some((p) => p.id === selectedAppointmentPatient)) $("#appointmentPatient").value = selectedAppointmentPatient;
   renderAppointmentDoctorOptions();
+}
+
+function patientHasAlert(p) {
+  return Boolean(p?.patientAlertActive && String(p.patientAlertMessage || "").trim());
+}
+
+function patientAlertDateLabel(p) {
+  if (!p?.patientAlertDate) return "Sin fecha";
+  const overdue = p.patientAlertDate < localDateValue();
+  return `${overdue ? "Vencida · " : "Seguimiento · "}${new Date(`${p.patientAlertDate}T12:00:00`).toLocaleDateString("es-US")}`;
+}
+
+async function resolvePatientAlert(id) {
+  const p = patient(id);
+  if (!p) return;
+  try {
+    await savePatient({ id, patientAlertActive: false, patientAlertResolvedAt: new Date().toISOString() });
+    p.patientAlertActive = false;
+    render();
+    if ($("#visitDialog")?.classList.contains("active") && $("#visitPatient")?.value === id) renderVisitPatientBanner();
+    if ($("#patientFinanceDialog")?.open) openPatientFinance(id);
+    toast("Alerta marcada como resuelta");
+  } catch (error) { console.error(error); toast("No se pudo resolver la alerta"); }
 }
 
 function appointmentDoctors() {
@@ -1668,7 +1691,7 @@ function openPatientFinance(id) {
   const entries = state.payments.filter((entry) => entry.patientId === id).sort((a, b) => new Date(b.date) - new Date(a.date));
   const data = totals(visits);
   $("#patientFinanceTitle").textContent = p.name;
-  $("#patientFinanceDetail").innerHTML = `<div class="finance-profile-summary"><div><small>Facturado</small><strong>${money(data.billed)}</strong></div><div><small>Pagado</small><strong>${money(data.paid)}</strong></div><div><small>Balance</small><strong>${money(data.debt)}</strong></div></div>
+  $("#patientFinanceDetail").innerHTML = `${patientHasAlert(p) ? `<div class="patient-finance-alert"><div><strong>📌 ${escapeHtml(p.patientAlertMessage)}</strong><span>${patientAlertDateLabel(p)}</span></div><button type="button" class="btn light" onclick="resolvePatientAlert('${p.id}')">Marcar resuelta</button></div>` : ""}<div class="finance-profile-summary"><div><small>Facturado</small><strong>${money(data.billed)}</strong></div><div><small>Pagado</small><strong>${money(data.paid)}</strong></div><div><small>Balance</small><strong>${money(data.debt)}</strong></div></div>
     <div class="finance-profile-info"><span>${escapeHtml(p.phone || "Sin teléfono")}</span><span>${escapeHtml(payerLabel(p))}</span>${p.insuranceMemberId ? `<span>Póliza: ${escapeHtml(p.insuranceMemberId)}</span>` : ""}</div>
     <h4>Facturas y consultas</h4><div class="finance-profile-list">${visits.length ? visits.map((visit) => `<div><span>${fmtDate(visit.date)}<small>${escapeHtml(invoiceNumber(visit))} · ${escapeHtml(visit.reason || "Consulta")}</small></span><strong>${money(balance(visit))}<small>balance</small></strong><button class="btn light" onclick="openInvoice('${visit.id}')">Factura</button></div>`).join("") : `<div class="empty">Sin facturas.</div>`}</div>
     <h4>Movimientos</h4><div class="finance-profile-list">${entries.length ? entries.map((entry) => `<div><span>${fmtDate(entry.date)}<small>${entry.source === "insurance" ? "Seguro" : "Paciente"} · ${escapeHtml(entry.reference || entry.method || "Pago")}</small></span><strong>${money(entry.amount)}</strong></div>`).join("") : `<div class="empty">Sin movimientos individuales.</div>`}</div>`;
@@ -1697,6 +1720,9 @@ function openPatientDialog(p = null) {
   $("#patientBirthdayEmail").checked = Boolean(p?.birthdayEmailEnabled);
   $("#patientDocument").value = p?.document || "";
   $("#patientNotes").value = p?.notes || "";
+  $("#patientAlertMessage").value = p?.patientAlertMessage || "";
+  $("#patientAlertDate").value = p?.patientAlertDate || "";
+  $("#patientAlertActive").checked = Boolean(p?.patientAlertActive);
   clearFormErrors($("#patientForm"));
   $("#patientDialog").showModal();
   requestAnimationFrame(() => $("#patientName").focus());
@@ -1753,7 +1779,8 @@ function renderVisitPatientBanner() {
     <div class="patient-banner-name"><small>Expediente del paciente</small><strong>${escapeHtml(p.name)}</strong><span>${escapeHtml(p.document || "Sin documento")}</span></div>
     <div><small>Edad</small><strong>${escapeHtml(p.age || "—")}</strong></div>
     <div><small>Teléfono</small><strong>${escapeHtml(p.phone || "—")}</strong></div>
-    <div><small>Seguro</small><strong>${escapeHtml(p.insuranceCompany || (p.payerType === "insurance" ? "Registrado" : "Pago propio"))}</strong></div>`;
+    <div><small>Seguro</small><strong>${escapeHtml(p.insuranceCompany || (p.payerType === "insurance" ? "Registrado" : "Pago propio"))}</strong></div>
+    ${patientHasAlert(p) ? `<div class="patient-banner-alert"><span>📌</span><div><strong>${escapeHtml(p.patientAlertMessage)}</strong><small>${patientAlertDateLabel(p)}</small></div><button type="button" onclick="resolvePatientAlert('${p.id}')">Marcar resuelta</button></div>` : ""}`;
 }
 
 function closeVisitWorkspace() {
@@ -1958,6 +1985,7 @@ window.deleteClinicDocument = deleteClinicDocument;
 window.openSignatureDialog = openSignatureDialog;
 window.selectSignatureDocument = selectSignatureDocument;
 window.closeVisitWorkspace = closeVisitWorkspace;
+window.resolvePatientAlert = resolvePatientAlert;
 
 // El expediente de consulta vive dentro del área principal, no como ventana emergente.
 $(".main").appendChild($("#visitDialog"));
@@ -2060,6 +2088,9 @@ $("#patientBirthDate").addEventListener("change", () => {
   if (calculatedAge !== "" && calculatedAge >= 0) $("#patientAge").value = calculatedAge;
   validatePatientForm();
 });
+$("#patientAlertMessage").addEventListener("input", () => {
+  if ($("#patientAlertMessage").value.trim()) $("#patientAlertActive").checked = true;
+});
 $("#visitPaid").addEventListener("input", validateVisitForm);
 $("#visitInsurancePaid").addEventListener("input", validateVisitForm);
 $("#visitPaymentType").addEventListener("change", () => { toggleVisitInsuranceFields(); validateVisitForm(); });
@@ -2149,6 +2180,10 @@ $("#patientForm").addEventListener("submit", async (event) => {
     birthdayEmailEnabled: $("#patientBirthdayEmail").checked,
     document: $("#patientDocument").value.trim(),
     notes: $("#patientNotes").value.trim(),
+    patientAlertMessage: $("#patientAlertMessage").value.trim(),
+    patientAlertDate: $("#patientAlertMessage").value.trim() ? $("#patientAlertDate").value : "",
+    patientAlertActive: Boolean($("#patientAlertMessage").value.trim() && $("#patientAlertActive").checked),
+    patientAlertResolvedAt: $("#patientAlertMessage").value.trim() && $("#patientAlertActive").checked ? "" : (id ? state.patients.find((p) => p.id === id)?.patientAlertResolvedAt || "" : ""),
     createdAt: id ? state.patients.find((p) => p.id === id)?.createdAt : new Date().toISOString()
   };
 

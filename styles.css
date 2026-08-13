@@ -1613,6 +1613,26 @@ td small {
 .visit-patient-banner span { color: rgba(255,255,255,.82); font-size: 12px; }
 .patient-avatar { display: grid; place-items: center; width: 52px; height: 52px; border-radius: 50%; color: #0f766e; background: white; font-weight: 900; }
 .patient-banner-name strong { font-size: 20px; }
+.patient-banner-alert {
+  grid-column: 1 / -1;
+  display: grid !important;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 12px !important;
+  align-items: center;
+  padding: 12px 14px;
+  border: 1px solid rgba(255,255,255,.42);
+  border-radius: 13px;
+  color: #7c2d12;
+  background: #ffedd5;
+}
+.patient-banner-alert div { display: grid; gap: 2px; }
+.patient-banner-alert small { color: #9a3412; }
+.patient-banner-alert button { border: 0; background: transparent; color: #9a3412; font-weight: 850; cursor: pointer; }
+.patient-alert-row { background: #fffaf0; box-shadow: inset 4px 0 #f59e0b; }
+.patient-alert-chip { display: grid; gap: 2px; max-width: 420px; margin: 7px 0 2px; padding: 8px 10px; border-radius: 10px; color: #9a3412; background: #ffedd5; font-size: 12px; font-weight: 800; }
+.patient-alert-chip small { color: #b45309; }
+.patient-finance-alert { display: flex; justify-content: space-between; gap: 14px; align-items: center; margin-bottom: 16px; padding: 14px 16px; border: 1px solid #fdba74; border-radius: 14px; color: #9a3412; background: #fff7ed; }
+.patient-finance-alert > div { display: grid; gap: 4px; }
 .visit-workspace-form > .modal-body {
   display: block;
   flex: 1;
@@ -1738,6 +1758,8 @@ td small {
   .visit-workspace-form { border-radius: 15px; }
   .visit-patient-banner { grid-template-columns: auto 1fr; }
   .visit-patient-banner > div:not(.patient-avatar):not(.patient-banner-name) { display: none; }
+  .visit-patient-banner > .patient-banner-alert { display: grid !important; grid-column: 1 / -1; }
+  .patient-finance-alert { align-items: stretch; flex-direction: column; }
   .visit-workspace-form > .modal-body { padding: 14px; }
   .visit-payment-summary { grid-template-columns: 1fr; }
   .visit-payment-entry { grid-template-columns: 1fr auto; }
