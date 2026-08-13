@@ -517,6 +517,8 @@ button {
   color: white;
   background: rgba(255,255,255,.08);
 }
+.nav-count { margin-left: auto; min-width: 21px; padding: 2px 6px; border-radius: 999px; color: white; background: #ef4444; font-size: 10px; text-align: center; }
+.nav-count.hidden { display: none; }
 
 .nav-item.active::before {
   content: "";
@@ -1664,6 +1666,20 @@ td small {
 .patient-alert-detail { display: grid; grid-template-columns: auto 1fr auto; gap: 16px; align-items: center; padding: 22px; border: 1px solid #fdba74; border-radius: 16px; color: #9a3412; background: #fff7ed; }
 .patient-alert-detail > span { font-size: 28px; }
 .patient-alert-detail h3, .patient-alert-detail p { margin: 0; }
+.patient-record-section-head { display: flex; justify-content: space-between; gap: 14px; align-items: center; margin: 20px 0 10px; }
+.patient-record-section-head h3 { margin: 0; }
+.task-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
+.task-summary > div { display: grid; gap: 4px; padding: 16px 18px; border: 1px solid var(--line); border-radius: 15px; background: white; }
+.task-summary small { color: var(--muted); }
+.task-summary strong { font-size: 25px; }
+.task-summary .overdue strong { color: var(--danger); }
+.task-toolbar { display: grid; grid-template-columns: minmax(240px, 1fr) 170px 180px; }
+.task-board { display: grid; gap: 10px; }
+.task-card { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 14px; align-items: start; padding: 16px; border: 1px solid var(--line); border-left: 5px solid #94a3b8; border-radius: 15px; background: white; box-shadow: 0 8px 22px rgba(15,23,42,.04); }
+.task-card.priority-high { border-left-color: #f59e0b; }.task-card.priority-urgent,.task-card.is-overdue { border-left-color: #ef4444; }.task-card.is-completed { opacity: .62; }
+.task-check { width: 25px; height: 25px; border: 2px solid #94a3b8; border-radius: 8px; color: white; background: white; font-weight: 900; cursor: pointer; }.task-card.is-completed .task-check { border-color: #10b981; background: #10b981; }
+.task-card h3 { margin: 7px 0 3px; font-size: 16px; }.task-card p { margin: 0 0 8px; color: var(--muted); }.task-card > div > small { color: var(--muted); }.task-card > div > small button { padding: 0; border: 0; color: var(--primary); background: transparent; font-weight: 800; cursor: pointer; }
+.task-card-meta { display: flex; gap: 7px; align-items: center; }.task-card-meta > span:last-child { color: var(--muted); font-size: 11px; font-weight: 750; }
 .visit-workspace-form > .modal-body {
   display: block;
   flex: 1;
@@ -1798,6 +1814,8 @@ td small {
   .patient-record-list > div { grid-template-columns: 1fr auto; }
   .patient-alert-detail { grid-template-columns: auto 1fr; }
   .patient-alert-detail .btn { grid-column: 1 / -1; }
+  .task-summary, .task-toolbar { grid-template-columns: 1fr; }
+  .task-card { grid-template-columns: auto 1fr; }.task-card > .row-actions { grid-column: 2; justify-content: flex-start; }
   .visit-workspace-form > .modal-body { padding: 14px; }
   .visit-payment-summary { grid-template-columns: 1fr; }
   .visit-payment-entry { grid-template-columns: 1fr auto; }

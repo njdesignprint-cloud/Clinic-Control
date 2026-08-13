@@ -127,6 +127,9 @@
         <button class="nav-item" data-page="appointments">
           <span>▦</span> Citas
         </button>
+        <button class="nav-item" data-page="tasks">
+          <span>✓</span> Tareas <b id="taskNavCount" class="nav-count hidden">0</b>
+        </button>
         <button class="nav-item" data-page="visits">
           <span>◆</span> Consultas
         </button>
@@ -406,6 +409,17 @@
         </div>
         <div class="data-card responsive-records"><table><thead><tr><th>Fecha / Factura</th><th>Paciente</th><th>Servicios</th><th>Tipo</th><th>Facturado</th><th>Paciente</th><th>Seguro</th><th>Balance</th><th>Estado</th><th></th></tr></thead><tbody id="billingTable"></tbody></table></div>
         <article class="card payment-history-card"><div class="card-head"><div><h3>Historial de pagos por cliente</h3><p>La búsqueda y las fechas de arriba también filtran cada pago inicial y abono posterior.</p></div></div><div id="paymentHistory" class="payment-history"></div></article>
+      </section>
+
+      <section class="page" id="tasks">
+        <div class="section-top"><div><h2>Centro de tareas</h2><p>Seguimientos, cobros, documentos y asuntos pendientes de toda la clínica.</p></div><button class="btn primary" id="taskCreateBtn">+ Nueva tarea</button></div>
+        <div id="taskSummary" class="task-summary"></div>
+        <div class="panel-toolbar task-toolbar">
+          <input id="taskSearch" type="search" placeholder="Buscar tarea o paciente..." />
+          <select id="taskStatusFilter"><option value="open">Pendientes</option><option value="all">Todas</option><option value="completed">Completadas</option><option value="overdue">Vencidas</option></select>
+          <select id="taskTypeFilter"><option value="">Todos los tipos</option><option value="payment">Cobro</option><option value="document">Documento</option><option value="call">Llamada</option><option value="insurance">Seguro</option><option value="follow_up">Seguimiento</option><option value="other">Otro</option></select>
+        </div>
+        <div id="taskBoard" class="task-board"></div>
       </section>
 
       <section class="page" id="invoices">
@@ -762,6 +776,22 @@
         <label class="field-group full">Nota<textarea id="paymentNote" rows="2" placeholder="Observación opcional"></textarea></label>
       </div></div>
       <div class="modal-actions"><button type="button" class="btn light" data-close="paymentDialog">Cancelar</button><button type="submit" class="btn primary">Aplicar pago</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="taskDialog">
+    <form id="taskForm" class="modal compact-modal" method="dialog">
+      <div class="modal-head"><div><small>Seguimiento</small><h3 id="taskDialogTitle">Nueva tarea</h3></div><button type="button" class="close-btn" data-close="taskDialog">×</button></div>
+      <input id="taskId" type="hidden" />
+      <div class="modal-body"><div class="form-grid">
+        <label class="field-group required full"><span class="field-label">Título <b>*</b></span><input id="taskTitle" type="text" placeholder="Ej. Confirmar pago prometido" required /></label>
+        <label class="field-group">Paciente<select id="taskPatient"><option value="">Sin paciente</option></select></label>
+        <label class="field-group">Tipo<select id="taskType"><option value="payment">Cobro</option><option value="document">Documento</option><option value="call">Llamada</option><option value="insurance">Seguro</option><option value="follow_up">Seguimiento</option><option value="other">Otro</option></select></label>
+        <label class="field-group">Fecha límite<input id="taskDueDate" type="datetime-local" /></label>
+        <label class="field-group">Prioridad<select id="taskPriority"><option value="normal">Normal</option><option value="high">Alta</option><option value="urgent">Urgente</option></select></label>
+        <label class="field-group full">Descripción<textarea id="taskDescription" rows="3" placeholder="Información necesaria para completar el seguimiento"></textarea></label>
+      </div></div>
+      <div class="modal-actions"><button type="button" class="btn light" data-close="taskDialog">Cancelar</button><button type="submit" class="btn primary">Guardar tarea</button></div>
     </form>
   </dialog>
 

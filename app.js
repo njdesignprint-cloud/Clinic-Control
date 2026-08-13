@@ -1,4 +1,4 @@
-let state = { settings: {}, patients: [], visits: [], appointments: [], payments: [], documents: [] };
+let state = { settings: {}, patients: [], visits: [], appointments: [], payments: [], documents: [], tasks: [] };
 let firestore = null;
 let auth = null;
 let storage = null;
@@ -8,6 +8,7 @@ let unsubscribeVisits = null;
 let unsubscribeAppointments = null;
 let unsubscribePayments = null;
 let unsubscribeDocuments = null;
+let unsubscribeTasks = null;
 let activeInvoiceId = null;
 let activeBillingTab = "all";
 let activeFinancePatientId = null;
@@ -153,12 +154,14 @@ function unsubscribeAll() {
   if (unsubscribeAppointments) unsubscribeAppointments();
   if (unsubscribePayments) unsubscribePayments();
   if (unsubscribeDocuments) unsubscribeDocuments();
+  if (unsubscribeTasks) unsubscribeTasks();
   unsubscribeSettings = null;
   unsubscribePatients = null;
   unsubscribeVisits = null;
   unsubscribeAppointments = null;
   unsubscribePayments = null;
   unsubscribeDocuments = null;
+  unsubscribeTasks = null;
 }
 
 function showAuthScreen() {
@@ -173,7 +176,7 @@ function showAppScreen() {
 }
 
 function clearState() {
-  state = { settings: {}, patients: [], visits: [], appointments: [], payments: [], documents: [] };
+  state = { settings: {}, patients: [], visits: [], appointments: [], payments: [], documents: [], tasks: [] };
   render();
 }
 
@@ -186,6 +189,7 @@ function subscribeToRealtime() {
   const appointmentsRef = getCollectionRef("appointments");
   const paymentsRef = getCollectionRef("payments");
   const documentsRef = getCollectionRef("documents");
+  const tasksRef = getCollectionRef("tasks");
 
   unsubscribeSettings = settingsRef.onSnapshot((doc) => {
     if (doc.exists) {
@@ -216,6 +220,12 @@ function subscribeToRealtime() {
   unsubscribeDocuments = documentsRef.orderBy("createdAt", "desc").onSnapshot((snapshot) => {
     state.documents = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
     renderSettings();
+  });
+  unsubscribeTasks = tasksRef.onSnapshot((snapshot) => {
+    state.tasks = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+    renderTasks();
+    renderTaskNavCount();
+    if ($("#patientRecord")?.classList.contains("active") && activePatientRecordId) renderPatientRecord();
   });
 }
 
@@ -331,6 +341,16 @@ async function saveSettings() {
   await getClinicDocRef().collection("settings").doc("clinic").set(state.settings, { merge: true });
 }
 
+async function saveTask(data) {
+  await ensureAuth();
+  await getCollectionRef("tasks").doc(data.id).set(data, { merge: true });
+}
+
+async function deleteTaskEntry(id) {
+  await ensureAuth();
+  await getCollectionRef("tasks").doc(id).delete();
+}
+
 async function uploadClinicDocument(file) {
   await ensureAuth();
   if (!file) return;
@@ -366,11 +386,13 @@ async function deletePatientEntry(id) {
   const visitSnap = await getCollectionRef("visits").where("patientId", "==", id).get();
   const appointmentSnap = await getCollectionRef("appointments").where("patientId", "==", id).get();
   const paymentSnap = await getCollectionRef("payments").where("patientId", "==", id).get();
+  const taskSnap = await getCollectionRef("tasks").where("patientId", "==", id).get();
   const batch = firestore.batch();
   batch.delete(getCollectionRef("patients").doc(id));
   visitSnap.docs.forEach((doc) => batch.delete(getCollectionRef("visits").doc(doc.id)));
   appointmentSnap.docs.forEach((doc) => batch.delete(doc.ref));
   paymentSnap.docs.forEach((doc) => batch.delete(doc.ref));
+  taskSnap.docs.forEach((doc) => batch.delete(doc.ref));
   await batch.commit();
 }
 
@@ -564,6 +586,7 @@ function showPage(pageId) {
     dashboard: "Dashboard",
     patients: "Pacientes",
     appointments: "Citas",
+    tasks: "Tareas y seguimientos",
     visits: "Consultas",
     billing: "Pagos",
     invoices: "Facturas",
@@ -586,6 +609,8 @@ function render() {
   renderInvoices();
   renderReports();
   renderSettings();
+  renderTasks();
+  renderTaskNavCount();
   if ($("#patientRecord")?.classList.contains("active") && activePatientRecordId) renderPatientRecord();
 }
 
@@ -719,6 +744,43 @@ function renderPatients() {
   `).join("") : `<tr><td class="empty" colspan="7">No se encontraron pacientes.</td></tr>`;
 }
 
+const taskTypes = { payment: "Cobro", document: "Documento", call: "Llamada", insurance: "Seguro", follow_up: "Seguimiento", other: "Otro" };
+function taskIsOverdue(task) { return task.status !== "completed" && task.dueDate && new Date(task.dueDate) < new Date(); }
+function renderTaskNavCount() {
+  const node = $("#taskNavCount"); if (!node) return;
+  const count = state.tasks.filter((task) => task.status !== "completed").length;
+  node.textContent = count > 99 ? "99+" : count;
+  node.classList.toggle("hidden", count === 0);
+}
+function renderTasks() {
+  const board = $("#taskBoard"); if (!board) return;
+  const query = ($("#taskSearch")?.value || "").toLowerCase().trim();
+  const status = $("#taskStatusFilter")?.value || "open";
+  const type = $("#taskTypeFilter")?.value || "";
+  const rows = [...state.tasks].filter((task) => {
+    const p = patient(task.patientId);
+    if (type && task.type !== type) return false;
+    if (status === "open" && task.status === "completed") return false;
+    if (status === "completed" && task.status !== "completed") return false;
+    if (status === "overdue" && !taskIsOverdue(task)) return false;
+    return `${task.title} ${task.description || ""} ${p?.name || ""}`.toLowerCase().includes(query);
+  }).sort((a, b) => (taskIsOverdue(b) - taskIsOverdue(a)) || new Date(a.dueDate || "9999-12-31") - new Date(b.dueDate || "9999-12-31"));
+  const open = state.tasks.filter((task) => task.status !== "completed").length, overdue = state.tasks.filter(taskIsOverdue).length, done = state.tasks.filter((task) => task.status === "completed").length;
+  $("#taskSummary").innerHTML = `<div><small>Pendientes</small><strong>${open}</strong></div><div class="overdue"><small>Vencidas</small><strong>${overdue}</strong></div><div><small>Completadas</small><strong>${done}</strong></div>`;
+  board.innerHTML = rows.length ? rows.map((task) => { const p = patient(task.patientId); return `<article class="task-card priority-${task.priority || "normal"} ${taskIsOverdue(task) ? "is-overdue" : ""} ${task.status === "completed" ? "is-completed" : ""}"><button class="task-check" onclick="toggleTask('${task.id}')" title="${task.status === "completed" ? "Reabrir" : "Completar"}">${task.status === "completed" ? "✓" : ""}</button><div><div class="task-card-meta"><span class="badge blue">${taskTypes[task.type] || "Tarea"}</span>${taskIsOverdue(task) ? `<span class="badge red">Vencida</span>` : ""}<span>${task.priority === "urgent" ? "Urgente" : task.priority === "high" ? "Alta" : "Normal"}</span></div><h3>${escapeHtml(task.title)}</h3><p>${escapeHtml(task.description || "Sin descripción")}</p><small>${p ? `<button onclick="openPatientRecord('${p.id}')">${escapeHtml(p.name)}</button> · ` : ""}${task.dueDate ? `Vence ${new Date(task.dueDate).toLocaleString("es-US")}` : "Sin fecha límite"}</small></div><div class="row-actions"><button class="icon-btn" onclick="openTaskDialog('${task.id}')">✎</button><button class="icon-btn" onclick="deleteTask('${task.id}')">⌫</button></div></article>`; }).join("") : `<div class="empty">No hay tareas que coincidan con los filtros.</div>`;
+}
+function openTaskDialog(id = "", patientId = "") {
+  const task = state.tasks.find((item) => item.id === id);
+  $("#taskDialogTitle").textContent = task ? "Editar tarea" : "Nueva tarea";
+  $("#taskId").value = task?.id || "";
+  $("#taskPatient").innerHTML = `<option value="">Sin paciente</option>${state.patients.map((p) => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join("")}`;
+  $("#taskPatient").value = task?.patientId || patientId || "";
+  $("#taskTitle").value = task?.title || ""; $("#taskType").value = task?.type || "follow_up"; $("#taskDueDate").value = task?.dueDate || ""; $("#taskPriority").value = task?.priority || "normal"; $("#taskDescription").value = task?.description || "";
+  $("#taskDialog").showModal(); requestAnimationFrame(() => $("#taskTitle").focus());
+}
+async function toggleTask(id) { const task = state.tasks.find((item) => item.id === id); if (!task) return; await saveTask({ id, status: task.status === "completed" ? "open" : "completed", completedAt: task.status === "completed" ? "" : new Date().toISOString(), updatedAt: new Date().toISOString() }); }
+async function deleteTask(id) { if (!confirm("¿Eliminar esta tarea?")) return; try { await deleteTaskEntry(id); toast("Tarea eliminada"); } catch (error) { console.error(error); toast("No se pudo eliminar la tarea"); } }
+
 function renderVisitOptions() {
   const selectedVisitPatient = $("#visitPatient").value;
   const selectedAppointmentPatient = $("#appointmentPatient")?.value;
@@ -760,6 +822,7 @@ function renderPatientRecord() {
   });
   const payments = [...recordedPayments, ...initialPayments].sort((a, b) => new Date(b.date) - new Date(a.date));
   const docs = visits.flatMap((visit) => (visit.documents || []).map((doc) => ({ ...doc, visit })));
+  const patientTasks = state.tasks.filter((task) => task.patientId === p.id).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   const data = totals(visits);
   const initials = p.name.split(/\s+/).slice(0, 2).map((part) => part[0]).join("").toUpperCase();
   $("#patientRecordHeader").innerHTML = `<button class="btn light" onclick="showPage('patients')">← Pacientes</button><div class="patient-record-avatar">${escapeHtml(initials)}</div><div class="patient-record-identity"><small>Expediente del paciente</small><h2>${escapeHtml(p.name)}</h2><span>${escapeHtml([p.document, p.phone, p.email].filter(Boolean).join(" · ") || "Información de contacto no indicada")}</span></div><div class="patient-record-actions"><button class="btn light" onclick="editPatient('${p.id}')">Editar</button><button class="btn primary" onclick="openVisitDialog({patientId:'${p.id}'})">Nueva consulta</button></div>`;
@@ -768,7 +831,7 @@ function renderPatientRecord() {
   const visitHtml = visits.length ? `<div class="patient-record-list">${visits.map((visit) => `<div><span><strong>${fmtDate(visit.date)} · ${escapeHtml(visit.reason || "Consulta")}</strong><small>${escapeHtml(visit.doctor || "Sin profesional")} · ${escapeHtml(invoiceNumber(visit))}</small></span><span><strong>${money(visit.total)}</strong><small>Balance ${money(balance(visit))}</small></span><button class="btn light" onclick="editVisit('${visit.id}')">Abrir</button></div>`).join("")}</div>` : `<div class="empty">Este paciente todavía no tiene consultas.</div>`;
   const documentHtml = docs.length ? `<div class="patient-record-list">${docs.map((doc) => `<div><span><strong>${escapeHtml(doc.name)}</strong><small>${fmtDate(doc.visit.date)} · ${doc.status === "signed" ? `Firmado por ${escapeHtml(doc.signedBy)}` : "Pendiente de firma"}</small></span><span class="badge ${doc.status === "signed" ? "green" : "red"}">${doc.status === "signed" ? "Firmado" : "Pendiente"}</span>${doc.url ? `<a class="btn light" href="${escapeHtml(doc.url)}" target="_blank" rel="noopener">Ver</a>` : ""}</div>`).join("")}</div>` : `<div class="empty">No hay documentos asignados.</div>`;
   const paymentHtml = `<div class="patient-record-metrics"><div><small>Facturado</small><strong>${money(data.billed)}</strong></div><div><small>Pagado</small><strong>${money(data.paid)}</strong></div><div><small>Balance</small><strong>${money(data.debt)}</strong></div></div>${payments.length ? `<div class="patient-record-list">${payments.map((entry) => `<div><span><strong>${fmtDate(entry.date)} · ${escapeHtml(paymentMethodLabel(entry.method))}</strong><small>${escapeHtml(entry.reference || "Sin referencia")}${entry.note ? ` · ${escapeHtml(entry.note)}` : ""}</small></span><strong>${money(entry.amount)}</strong><button class="btn light" onclick="openInvoice('${entry.visitId}')">Factura</button></div>`).join("")}</div>` : `<div class="empty">No hay abonos posteriores registrados.</div>`}`;
-  const alertHtml = patientHasAlert(p) ? `<div class="patient-alert-detail"><span>📌</span><div><h3>${escapeHtml(p.patientAlertMessage)}</h3><p>${patientAlertDateLabel(p)}</p></div><button class="btn primary" onclick="resolvePatientAlert('${p.id}')">Marcar resuelta</button></div>` : `<div class="empty"><strong>Sin alertas activas</strong><br>Edita el paciente para fijar un compromiso o seguimiento.</div>`;
+  const alertHtml = `${patientHasAlert(p) ? `<div class="patient-alert-detail"><span>📌</span><div><h3>${escapeHtml(p.patientAlertMessage)}</h3><p>${patientAlertDateLabel(p)}</p></div><button class="btn primary" onclick="resolvePatientAlert('${p.id}')">Marcar resuelta</button></div>` : ""}<div class="patient-record-section-head"><h3>Tareas y seguimientos</h3><button class="btn primary" onclick="openTaskDialog('', '${p.id}')">+ Agregar tarea</button></div>${patientTasks.length ? `<div class="patient-record-list">${patientTasks.map((task) => `<div><span><strong>${escapeHtml(task.title)}</strong><small>${taskTypes[task.type] || "Tarea"} · ${task.dueDate ? new Date(task.dueDate).toLocaleString("es-US") : "Sin fecha"}</small></span><span class="badge ${task.status === "completed" ? "green" : taskIsOverdue(task) ? "red" : "blue"}">${task.status === "completed" ? "Completada" : taskIsOverdue(task) ? "Vencida" : "Pendiente"}</span><button class="btn light" onclick="toggleTask('${task.id}')">${task.status === "completed" ? "Reabrir" : "Completar"}</button></div>`).join("")}</div>` : `<div class="empty">No hay tareas para este paciente.</div>`}`;
   $("#patientRecordContent").innerHTML = { summary, visits: visitHtml, documents: documentHtml, payments: paymentHtml, alerts: alertHtml }[activePatientRecordTab] || summary;
 }
 
@@ -2030,6 +2093,7 @@ window.closeVisitWorkspace = closeVisitWorkspace;
 window.resolvePatientAlert = resolvePatientAlert;
 window.openPatientRecord = openPatientRecord;
 window.selectPatientRecordTab = selectPatientRecordTab;
+window.openTaskDialog = openTaskDialog; window.toggleTask = toggleTask; window.deleteTask = deleteTask;
 
 // El expediente de consulta vive dentro del área principal, no como ventana emergente.
 $(".main").appendChild($("#visitDialog"));
@@ -2056,6 +2120,8 @@ $("#quickPatientBtn").addEventListener("click", () => openPatientDialog());
 $("#dashNewPatient").addEventListener("click", () => openPatientDialog());
 $("#patientCreateBtn").addEventListener("click", () => openPatientDialog());
 $("#appointmentCreateBtn").addEventListener("click", () => openAppointmentDialog());
+$("#taskCreateBtn").addEventListener("click", () => openTaskDialog());
+$("#taskSearch").addEventListener("input", renderTasks); $("#taskStatusFilter").addEventListener("change", renderTasks); $("#taskTypeFilter").addEventListener("change", renderTasks);
 
 $("#quickVisitBtn").addEventListener("click", () => openVisitDialog());
 $("#dashNewAppointment").addEventListener("click", () => openAppointmentDialog());
@@ -2200,6 +2266,12 @@ $("#paymentForm").addEventListener("submit", async (event) => {
     $("#paymentDialog").close();
     toast("Pago aplicado correctamente");
   } catch (error) { console.error(error); toast("No se pudo registrar el pago"); }
+});
+
+$("#taskForm").addEventListener("submit", async (event) => {
+  event.preventDefault(); const id = $("#taskId").value || uid(); const existing = state.tasks.find((task) => task.id === id);
+  const data = { id, title: $("#taskTitle").value.trim(), patientId: $("#taskPatient").value, type: $("#taskType").value, dueDate: $("#taskDueDate").value, priority: $("#taskPriority").value, description: $("#taskDescription").value.trim(), status: existing?.status || "open", createdAt: existing?.createdAt || new Date().toISOString(), createdBy: existing?.createdBy || auth.currentUser.uid, updatedAt: new Date().toISOString() };
+  if (!data.title) return toast("Escribe el título de la tarea."); try { await saveTask(data); $("#taskDialog").close(); toast(existing ? "Tarea actualizada" : "Tarea creada"); } catch (error) { console.error(error); toast("No se pudo guardar la tarea"); }
 });
 
 $("#patientForm").addEventListener("submit", async (event) => {
