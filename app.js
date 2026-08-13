@@ -200,6 +200,7 @@ function subscribeToRealtime() {
   unsubscribeVisits = visitsRef.onSnapshot((snapshot) => {
     state.visits = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
     render();
+    if ($("#visitDialog")?.classList.contains("active") && $("#visitId")?.value) renderVisitPaymentPanel(state.visits.find((visit) => visit.id === $("#visitId").value));
   });
   unsubscribeAppointments = appointmentsRef.onSnapshot((snapshot) => {
     state.appointments = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
@@ -208,6 +209,7 @@ function subscribeToRealtime() {
   unsubscribePayments = paymentsRef.onSnapshot((snapshot) => {
     state.payments = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
     render();
+    if ($("#visitDialog")?.classList.contains("active") && $("#visitId")?.value) renderVisitPaymentPanel(state.visits.find((visit) => visit.id === $("#visitId").value));
   });
   unsubscribeDocuments = documentsRef.orderBy("createdAt", "desc").onSnapshot((snapshot) => {
     state.documents = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
@@ -1076,6 +1078,35 @@ function renderPaymentHistory() {
   }).join("") : `<div class="empty">Todavía no hay movimientos individuales. Los pagos nuevos aparecerán aquí.</div>`;
 }
 
+function paymentMethodLabel(method) {
+  return { cash: "Efectivo", card: "Tarjeta", check: "Cheque", transfer: "Transferencia", insurance_eft: "EFT de seguro", other: "Otro" }[method] || method || "Pago";
+}
+
+function renderVisitPaymentPanel(visit = null) {
+  const box = $("#visitPaymentPanel");
+  if (!box) return;
+  if (!visit?.id) {
+    box.innerHTML = `<div class="visit-payment-unsaved"><strong>Guarda primero la consulta</strong><span>Después podrás registrar pagos en cualquier fecha y mantener aquí el historial completo.</span></div>`;
+    return;
+  }
+  const entries = state.payments.filter((entry) => entry.visitId === visit.id).sort((a, b) => new Date(b.date) - new Date(a.date));
+  const laterPaymentsTotal = entries.reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
+  const initialPayment = Math.max(0, totalPaid(visit) - laterPaymentsTotal);
+  const currentBalance = balance(visit);
+  box.innerHTML = `
+    <div class="visit-payment-summary">
+      <div><small>Total facturado</small><strong>${money(visit.total)}</strong></div>
+      <div><small>Total recibido</small><strong>${money(totalPaid(visit))}</strong></div>
+      <div class="${currentBalance > 0 ? "pending" : "paid"}"><small>Balance pendiente</small><strong>${money(currentBalance)}</strong></div>
+      <button type="button" class="btn primary" onclick="openPaymentDialog('${visit.id}')" ${currentBalance <= 0 ? "disabled" : ""}>+ Registrar otro pago</button>
+    </div>
+    <div class="visit-payment-history">
+      ${entries.map((entry) => `<div class="visit-payment-entry"><div><strong>${fmtDate(entry.date)}</strong><small>${escapeHtml(paymentMethodLabel(entry.method))}${entry.reference ? ` · ${escapeHtml(entry.reference)}` : ""}</small>${entry.note ? `<span>${escapeHtml(entry.note)}</span>` : ""}</div><span class="badge ${entry.source === "insurance" ? "blue" : "green"}">${entry.source === "insurance" ? "Seguro" : "Paciente"}</span><strong>${money(entry.amount)}</strong></div>`).join("")}
+      ${initialPayment > 0 ? `<div class="visit-payment-entry initial-payment"><div><strong>${fmtDate(visit.date)}</strong><small>Pago registrado al crear la consulta</small></div><span class="badge green">Inicial</span><strong>${money(initialPayment)}</strong></div>` : ""}
+      ${!entries.length && initialPayment <= 0 ? `<div class="empty document-empty">Todavía no hay pagos registrados para esta consulta.</div>` : ""}
+    </div>`;
+}
+
 function renderInvoices() {
   const table = $("#invoicesTable");
   if (!table) return;
@@ -1676,6 +1707,7 @@ function openVisitDialog(visit = null) {
   toggleVisitInsuranceFields();
   $("#visitReason").value = visit?.reason || "";
   $("#visitNotes").value = visit?.notes || "";
+  renderVisitPaymentPanel(visit);
   renderVisitDocuments(visit?.documents || []);
   renderVisitPatientBanner();
   clearFormErrors($("#visitForm"));
@@ -2058,7 +2090,16 @@ $("#paymentForm").addEventListener("submit", async (event) => {
   setFieldError($("#paymentAmount"), $("#paymentAmountError"), message);
   if (message) return;
   const entry = { id: uid(), visitId: visit.id, patientId: visit.patientId, source: $("#paymentSource").value, amount, method: $("#paymentMethod").value, date: $("#paymentDate").value, reference: $("#paymentReference").value.trim(), note: $("#paymentNote").value.trim(), createdAt: new Date().toISOString() };
-  try { await registerPayment(entry, visit); $("#paymentDialog").close(); toast("Pago aplicado correctamente"); } catch (error) { console.error(error); toast("No se pudo registrar el pago"); }
+  try {
+    await registerPayment(entry, visit);
+    const sourceField = entry.source === "insurance" ? "insurancePaid" : "patientPaid";
+    visit[sourceField] = Number(visit[sourceField] || 0) + entry.amount;
+    visit.paid = Number(visit.patientPaid || 0) + Number(visit.insurancePaid || 0);
+    state.payments = [...state.payments.filter((item) => item.id !== entry.id), entry];
+    renderVisitPaymentPanel(visit);
+    $("#paymentDialog").close();
+    toast("Pago aplicado correctamente");
+  } catch (error) { console.error(error); toast("No se pudo registrar el pago"); }
 });
 
 $("#patientForm").addEventListener("submit", async (event) => {

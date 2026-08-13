@@ -1662,12 +1662,27 @@ td small {
 .visit-workspace-form .form-section-title.section-spaced { margin-top: 24px; }
 .visit-workspace-form .form-section-title + .form-grid,
 .visit-workspace-form .form-section-title + .service-editor,
+.visit-workspace-form .form-section-title + .visit-payment-panel,
 .visit-workspace-form .form-section-title + .visit-documents {
   padding: 20px;
   border: 1px solid var(--line);
   border-radius: 0 0 16px 16px;
   background: white;
 }
+.visit-payment-panel { display: grid; gap: 16px; }
+.visit-payment-summary { display: grid; grid-template-columns: repeat(3, minmax(130px, 1fr)) auto; gap: 12px; align-items: stretch; }
+.visit-payment-summary > div { display: grid; gap: 5px; padding: 14px 16px; border-radius: 13px; background: #f8fafc; }
+.visit-payment-summary small { color: var(--muted); font-weight: 750; }
+.visit-payment-summary strong { font-size: 20px; }
+.visit-payment-summary .pending strong { color: #b45309; }
+.visit-payment-summary .paid strong { color: #047857; }
+.visit-payment-summary .btn { align-self: center; white-space: nowrap; }
+.visit-payment-history { display: grid; gap: 8px; }
+.visit-payment-entry { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 14px; align-items: center; padding: 12px 14px; border: 1px solid var(--line); border-radius: 13px; }
+.visit-payment-entry > div { display: grid; gap: 3px; }
+.visit-payment-entry small, .visit-payment-entry span:not(.badge) { color: var(--muted); }
+.visit-payment-unsaved { display: grid; gap: 5px; padding: 18px; border: 1px dashed #94a3b8; border-radius: 14px; color: var(--muted); background: #f8fafc; }
+.visit-payment-unsaved strong { color: var(--ink); }
 .visit-workspace-form .modal-actions {
   position: sticky;
   bottom: 0;
@@ -1724,6 +1739,9 @@ td small {
   .visit-patient-banner { grid-template-columns: auto 1fr; }
   .visit-patient-banner > div:not(.patient-avatar):not(.patient-banner-name) { display: none; }
   .visit-workspace-form > .modal-body { padding: 14px; }
+  .visit-payment-summary { grid-template-columns: 1fr; }
+  .visit-payment-entry { grid-template-columns: 1fr auto; }
+  .visit-payment-entry > strong { grid-column: 2; }
 }
 
 .clinic-logo-preview {
