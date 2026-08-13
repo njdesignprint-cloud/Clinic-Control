@@ -1,4 +1,4 @@
-let state = { settings: {}, patients: [], visits: [], appointments: [], payments: [], documents: [], tasks: [], activities: [], teamMembers: [], formTemplates: [], formResponses: [], communications: [], clinicalRecords: [] };
+let state = { settings: {}, patients: [], visits: [], appointments: [], payments: [], documents: [], tasks: [], activities: [], teamMembers: [], formTemplates: [], formResponses: [], communications: [], clinicalRecords: [], leads: [], campaigns: [] };
 let firestore = null;
 let auth = null;
 let storage = null;
@@ -17,6 +17,8 @@ let unsubscribeFormTemplates = null;
 let unsubscribeFormResponses = null;
 let unsubscribeCommunications = null;
 let unsubscribeClinicalRecords = null;
+let unsubscribeLeads = null;
+let unsubscribeCampaigns = null;
 let activeInvoiceId = null;
 let activeBillingTab = "all";
 let activeFinancePatientId = null;
@@ -64,7 +66,9 @@ function buildSeedState() {
     formTemplates: [],
     formResponses: [],
     communications: [],
-    clinicalRecords: []
+    clinicalRecords: [],
+    leads: [],
+    campaigns: []
   };
 }
 
@@ -98,7 +102,9 @@ function normalizeState(saved) {
     formTemplates: Array.isArray(saved?.formTemplates) ? saved.formTemplates : seed.formTemplates,
     formResponses: Array.isArray(saved?.formResponses) ? saved.formResponses : seed.formResponses,
     communications: Array.isArray(saved?.communications) ? saved.communications : seed.communications,
-    clinicalRecords: Array.isArray(saved?.clinicalRecords) ? saved.clinicalRecords : seed.clinicalRecords
+    clinicalRecords: Array.isArray(saved?.clinicalRecords) ? saved.clinicalRecords : seed.clinicalRecords,
+    leads: Array.isArray(saved?.leads) ? saved.leads : seed.leads,
+    campaigns: Array.isArray(saved?.campaigns) ? saved.campaigns : seed.campaigns
   };
 }
 
@@ -186,6 +192,8 @@ function unsubscribeAll() {
   if (unsubscribeFormResponses) unsubscribeFormResponses();
   if (unsubscribeCommunications) unsubscribeCommunications();
   if (unsubscribeClinicalRecords) unsubscribeClinicalRecords();
+  if (unsubscribeLeads) unsubscribeLeads();
+  if (unsubscribeCampaigns) unsubscribeCampaigns();
   unsubscribeSettings = null;
   unsubscribePatients = null;
   unsubscribeVisits = null;
@@ -199,6 +207,8 @@ function unsubscribeAll() {
   unsubscribeFormResponses = null;
   unsubscribeCommunications = null;
   unsubscribeClinicalRecords = null;
+  unsubscribeLeads = null;
+  unsubscribeCampaigns = null;
 }
 
 function showAuthScreen() {
@@ -213,7 +223,7 @@ function showAppScreen() {
 }
 
 function clearState() {
-  state = { settings: {}, patients: [], visits: [], appointments: [], payments: [], documents: [], tasks: [], activities: [], teamMembers: [], formTemplates: [], formResponses: [], communications: [], clinicalRecords: [] };
+  state = { settings: {}, patients: [], visits: [], appointments: [], payments: [], documents: [], tasks: [], activities: [], teamMembers: [], formTemplates: [], formResponses: [], communications: [], clinicalRecords: [], leads: [], campaigns: [] };
   render();
 }
 
@@ -233,6 +243,8 @@ function subscribeToRealtime() {
   const formResponsesRef = getCollectionRef("formResponses");
   const communicationsRef = getCollectionRef("communications");
   const clinicalRecordsRef = getCollectionRef("clinicalRecords");
+  const leadsRef = getCollectionRef("leads");
+  const campaignsRef = getCollectionRef("campaigns");
 
   unsubscribeSettings = settingsRef.onSnapshot((doc) => {
     if (doc.exists) {
@@ -296,12 +308,18 @@ function subscribeToRealtime() {
     state.clinicalRecords = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
     if ($("#patientRecord")?.classList.contains("active") && activePatientRecordId) renderPatientRecord();
   });
+  if (["admin", "reception"].includes(currentAccess.role)) unsubscribeLeads = leadsRef.onSnapshot((snapshot) => {
+    state.leads = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })); renderCrm();
+  });
+  if (["admin", "reception"].includes(currentAccess.role)) unsubscribeCampaigns = campaignsRef.onSnapshot((snapshot) => {
+    state.campaigns = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })); renderCrm();
+  });
 }
 
 const roleLabels = { admin: "Administrador", reception: "Recepción", clinical: "Profesional clínico", accounting: "Contabilidad" };
 const rolePages = {
-  admin: ["dashboard", "patients", "appointments", "tasks", "visits", "billing", "invoices", "reports", "settings", "patientRecord", "visitDialog"],
-  reception: ["dashboard", "patients", "appointments", "tasks", "patientRecord"],
+  admin: ["dashboard", "patients", "crm", "appointments", "tasks", "visits", "billing", "invoices", "reports", "settings", "patientRecord", "visitDialog"],
+  reception: ["dashboard", "patients", "crm", "appointments", "tasks", "patientRecord"],
   clinical: ["dashboard", "patients", "appointments", "tasks", "visits", "patientRecord", "visitDialog"],
   accounting: ["dashboard", "patients", "tasks", "billing", "invoices", "reports", "patientRecord"]
 };
@@ -723,6 +741,7 @@ function showPage(pageId) {
   const labels = {
     dashboard: "Dashboard",
     patients: "Pacientes",
+    crm: "CRM y captación",
     appointments: "Citas",
     tasks: "Tareas y seguimientos",
     visits: "Consultas",
@@ -749,6 +768,7 @@ function render() {
   renderSettings();
   renderTasks();
   renderTaskNavCount();
+  renderCrm();
   if ($("#patientRecord")?.classList.contains("active") && activePatientRecordId) renderPatientRecord();
 }
 
@@ -861,7 +881,7 @@ function renderFinanceBars(data) {
 
 function renderPatients() {
   const query = ($("#patientSearch")?.value || "").toLowerCase().trim();
-  const rows = state.patients.filter((p) => `${p.name} ${p.phone} ${p.email || ""} ${p.document} ${p.language || ""} ${p.notes || ""} ${p.patientAlertMessage || ""} ${p.insuranceCompany || ""} ${p.insuranceMemberId || ""} ${p.insuranceGroup || ""}`.toLowerCase().includes(query));
+  const rows = state.patients.filter((p) => `${p.name} ${p.phone} ${p.email || ""} ${p.document} ${p.language || ""} ${p.notes || ""} ${p.source || ""} ${p.lifecycle || ""} ${p.patientAlertMessage || ""} ${p.insuranceCompany || ""} ${p.insuranceMemberId || ""} ${p.insuranceGroup || ""}`.toLowerCase().includes(query));
 
   $("#patientsTable").innerHTML = rows.length ? rows.map((p) => `
     <tr class="${patientHasAlert(p) ? "patient-alert-row" : ""}">
@@ -983,7 +1003,7 @@ function renderPatientRecord() {
   $("#patientRecordHeader").innerHTML = `<button class="btn light" onclick="showPage('patients')">← Pacientes</button><div class="patient-record-avatar">${escapeHtml(initials)}</div><div class="patient-record-identity"><small>Expediente del paciente</small><h2>${escapeHtml(p.name)}</h2><span>${escapeHtml([p.document, p.phone, p.email].filter(Boolean).join(" · ") || "Información de contacto no indicada")}</span></div><div class="patient-record-actions"><button class="btn light" onclick="openCommunicationDialog('${p.id}')">Comunicar</button>${canEditPatient ? `<button class="btn light" onclick="editPatient('${p.id}')">Editar</button>` : ""}${canCreateVisit ? `<button class="btn primary" onclick="openVisitDialog({patientId:'${p.id}'})">Nueva consulta</button>` : ""}</div>`;
   applyRoleAccess();
   $$('[data-patient-record-tab]').forEach((button) => button.classList.toggle("active", button.dataset.patientRecordTab === activePatientRecordTab));
-  const summary = `${patientHasAlert(p) ? `<div class="patient-finance-alert"><div><strong>📌 ${escapeHtml(p.patientAlertMessage)}</strong><span>${patientAlertDateLabel(p)}</span></div><button class="btn light" onclick="resolvePatientAlert('${p.id}')">Marcar resuelta</button></div>` : ""}<div class="patient-record-metrics"><div><small>Consultas</small><strong>${visits.length}</strong></div><div><small>Facturado</small><strong>${money(data.billed)}</strong></div><div><small>Pagado</small><strong>${money(data.paid)}</strong></div><div><small>Balance</small><strong>${money(data.debt)}</strong></div></div><div class="patient-record-grid"><article><h3>Información</h3><dl><div><dt>Nacimiento</dt><dd>${fmtBirthDate(p.birthDate)}</dd></div><div><dt>Edad</dt><dd>${escapeHtml(p.age || "—")}</dd></div><div><dt>Idioma</dt><dd>${escapeHtml(p.language || "—")}</dd></div><div><dt>Forma de pago</dt><dd>${escapeHtml(payerLabel(p))}</dd></div><div><dt>Seguro</dt><dd>${escapeHtml(p.insuranceCompany || "—")}</dd></div></dl></article><article><h3>Notas</h3><p>${escapeHtml(p.notes || "No hay notas generales para este paciente.")}</p></article></div>`;
+  const summary = `${patientHasAlert(p) ? `<div class="patient-finance-alert"><div><strong>📌 ${escapeHtml(p.patientAlertMessage)}</strong><span>${patientAlertDateLabel(p)}</span></div><button class="btn light" onclick="resolvePatientAlert('${p.id}')">Marcar resuelta</button></div>` : ""}<div class="patient-record-metrics"><div><small>Consultas</small><strong>${visits.length}</strong></div><div><small>Facturado</small><strong>${money(data.billed)}</strong></div><div><small>Pagado</small><strong>${money(data.paid)}</strong></div><div><small>Balance</small><strong>${money(data.debt)}</strong></div></div><div class="patient-record-grid"><article><h3>Información</h3><dl><div><dt>Nacimiento</dt><dd>${fmtBirthDate(p.birthDate)}</dd></div><div><dt>Edad</dt><dd>${escapeHtml(p.age || "—")}</dd></div><div><dt>Idioma</dt><dd>${escapeHtml(p.language || "—")}</dd></div><div><dt>Forma de pago</dt><dd>${escapeHtml(payerLabel(p))}</dd></div><div><dt>Seguro</dt><dd>${escapeHtml(p.insuranceCompany || "—")}</dd></div><div><dt>Fuente</dt><dd>${escapeHtml(p.source || "No indicada")}</dd></div><div><dt>Estado CRM</dt><dd>${escapeHtml(p.lifecycle || "active")}</dd></div></dl></article><article><h3>Notas</h3><p>${escapeHtml(p.notes || "No hay notas generales para este paciente.")}</p></article></div>`;
   const visitHtml = visits.length ? `<div class="patient-record-list">${visits.map((visit) => `<div><span><strong>${fmtDate(visit.date)} · ${escapeHtml(visit.reason || "Consulta")}</strong><small>${escapeHtml(visit.doctor || "Sin profesional")} · ${escapeHtml((visit.diagnoses || []).join(", ") || invoiceNumber(visit))}</small></span><span><strong>${money(visit.total)}</strong><small>Balance ${money(balance(visit))}</small></span>${["admin", "clinical"].includes(currentAccess.role) ? `<button class="btn light" onclick="editVisit('${visit.id}')">Abrir</button>` : ""}</div>`).join("")}</div>` : `<div class="empty">Este paciente todavía no tiene consultas.</div>`;
   const documentHtml = `<div class="patient-record-section-head"><h3>Formularios digitales</h3><button class="btn primary" onclick="assignDigitalForm('${p.id}')">+ Asignar formulario</button></div>${digitalForms.length ? `<div class="patient-record-list">${digitalForms.map((entry) => `<div><span><strong>${escapeHtml(entry.templateName || "Formulario")}</strong><small>${formCategoryLabels[entry.category] || "Formulario"} · ${fmtDate(entry.updatedAt || entry.createdAt)}</small></span><span class="badge ${entry.status === "completed" ? "green" : "red"}">${entry.status === "completed" ? "Completado" : "Pendiente"}</span><button class="btn light" onclick="openPatientDigitalForm('${entry.id}')">${entry.status === "completed" ? "Ver / editar" : "Completar"}</button></div>`).join("")}</div>` : `<div class="empty">No hay formularios digitales asignados.</div>`}<div class="patient-record-section-head section-spaced"><h3>Documentos y firmas</h3></div>${docs.length ? `<div class="patient-record-list">${docs.map((doc) => `<div><span><strong>${escapeHtml(doc.name)}</strong><small>${fmtDate(doc.visit.date)} · ${doc.status === "signed" ? `Firmado por ${escapeHtml(doc.signedBy)}` : "Pendiente de firma"}</small></span><span class="badge ${doc.status === "signed" ? "green" : "red"}">${doc.status === "signed" ? "Firmado" : "Pendiente"}</span>${doc.url ? `<a class="btn light" href="${escapeHtml(doc.url)}" target="_blank" rel="noopener">Ver</a>` : ""}</div>`).join("")}</div>` : `<div class="empty">No hay documentos asignados.</div>`}`;
   const paymentHtml = `<div class="patient-record-metrics"><div><small>Facturado</small><strong>${money(data.billed)}</strong></div><div><small>Pagado</small><strong>${money(data.paid)}</strong></div><div><small>Balance</small><strong>${money(data.debt)}</strong></div></div>${payments.length ? `<div class="patient-record-list">${payments.map((entry) => `<div><span><strong>${fmtDate(entry.date)} · ${escapeHtml(paymentMethodLabel(entry.method))}</strong><small>${escapeHtml(entry.reference || "Sin referencia")}${entry.note ? ` · ${escapeHtml(entry.note)}` : ""}</small></span><strong>${money(entry.amount)}</strong><button class="btn light" onclick="openInvoice('${entry.visitId}')">Factura</button></div>`).join("")}</div>` : `<div class="empty">No hay abonos posteriores registrados.</div>`}`;
@@ -1782,6 +1802,69 @@ function communicationActionHtml(entry, p) {
   return "";
 }
 
+const leadStages = { new: "Nuevos", contacted: "Contactados", scheduled: "Cita programada", won: "Convertidos", lost: "Perdidos" };
+
+function crmOwners() {
+  const owner = { id: activeClinicId, name: "Propietario" };
+  return [owner, ...state.teamMembers.filter((member) => member.status !== "disabled").map((member) => ({ id: member.id, name: member.name || member.email }))].filter((item, index, list) => list.findIndex((other) => other.id === item.id) === index);
+}
+
+function renderCrm() {
+  const pipeline = $("#crmPipeline"); if (!pipeline) return;
+  const query = ($("#leadSearch")?.value || "").toLowerCase().trim(); const source = $("#leadSourceFilter")?.value || ""; const owner = $("#leadOwnerFilter")?.value || "";
+  const rows = state.leads.filter((lead) => (!query || `${lead.name} ${lead.phone} ${lead.email} ${lead.interest} ${lead.notes}`.toLowerCase().includes(query)) && (!source || lead.source === source) && (!owner || lead.ownerId === owner));
+  const won = state.leads.filter((lead) => lead.stage === "won"); const open = state.leads.filter((lead) => !["won", "lost"].includes(lead.stage)); const pipelineValue = open.reduce((sum, lead) => sum + Number(lead.estimatedValue || 0), 0); const conversion = state.leads.length ? (won.length / state.leads.length) * 100 : 0;
+  $("#crmMetrics").innerHTML = `<div><small>Prospectos abiertos</small><strong>${open.length}</strong></div><div><small>Valor del embudo</small><strong>${money(pipelineValue)}</strong></div><div><small>Convertidos</small><strong>${won.length}</strong></div><div><small>Conversión</small><strong>${conversion.toFixed(1)}%</strong></div>`;
+  pipeline.innerHTML = Object.entries(leadStages).map(([stage, label]) => { const stageRows = rows.filter((lead) => lead.stage === stage).sort((a, b) => new Date(b.updatedAt || b.createdAt) - new Date(a.updatedAt || a.createdAt)); return `<section class="pipeline-column stage-${stage}"><header><strong>${label}</strong><span>${stageRows.length}</span></header><div>${stageRows.map(leadCardHtml).join("") || `<p class="pipeline-empty">Sin prospectos</p>`}</div></section>`; }).join("");
+  const ownerSelect = $("#leadOwnerFilter"); if (ownerSelect) { const selected = ownerSelect.value; ownerSelect.innerHTML = `<option value="">Todos los responsables</option>${crmOwners().map((item) => `<option value="${item.id}">${escapeHtml(item.name)}</option>`).join("")}`; ownerSelect.value = selected; }
+  renderCampaigns();
+}
+
+function leadCardHtml(lead) {
+  const campaign = state.campaigns.find((item) => item.id === lead.campaignId); const followUpOverdue = lead.nextFollowUp && new Date(lead.nextFollowUp) < new Date() && !["won", "lost"].includes(lead.stage);
+  return `<article class="lead-card ${followUpOverdue ? "followup-overdue" : ""}"><div class="lead-card-head"><button onclick="openLeadDialog('${lead.id}')">${escapeHtml(lead.name)}</button><strong>${money(lead.estimatedValue)}</strong></div><p>${escapeHtml(lead.interest || "Interés no indicado")}</p><small>${escapeHtml(lead.source || "Sin fuente")}${campaign ? ` · ${escapeHtml(campaign.name)}` : ""}</small>${lead.nextFollowUp ? `<small class="lead-followup">${followUpOverdue ? "⚠ " : ""}Próximo: ${fmtDate(lead.nextFollowUp)}</small>` : ""}<div class="lead-actions"><select aria-label="Etapa" onchange="moveLead('${lead.id}',this.value)">${Object.entries(leadStages).map(([value, label]) => `<option value="${value}" ${lead.stage === value ? "selected" : ""}>${label}</option>`).join("")}</select>${lead.stage !== "won" ? `<button class="btn light" onclick="convertLead('${lead.id}')">Convertir</button>` : lead.patientId ? `<button class="btn light" onclick="openPatientRecord('${lead.patientId}')">Paciente</button>` : ""}</div></article>`;
+}
+
+function openLeadDialog(id = "") {
+  const lead = state.leads.find((item) => item.id === id); $("#leadDialogTitle").textContent = lead ? "Editar prospecto" : "Nuevo prospecto"; $("#leadId").value = lead?.id || ""; $("#leadName").value = lead?.name || ""; $("#leadPhone").value = lead?.phone || ""; $("#leadEmail").value = lead?.email || ""; $("#leadSource").value = lead?.source || "Google"; $("#leadStage").value = lead?.stage || "new"; $("#leadInterest").value = lead?.interest || ""; $("#leadValue").value = lead?.estimatedValue || ""; $("#leadNextFollowUp").value = lead?.nextFollowUp || ""; $("#leadNotes").value = lead?.notes || "";
+  $("#leadOwner").innerHTML = crmOwners().map((item) => `<option value="${item.id}">${escapeHtml(item.name)}</option>`).join(""); $("#leadOwner").value = lead?.ownerId || auth.currentUser.uid;
+  $("#leadCampaign").innerHTML = `<option value="">Sin campaña</option>${state.campaigns.map((item) => `<option value="${item.id}">${escapeHtml(item.name)}</option>`).join("")}`; $("#leadCampaign").value = lead?.campaignId || ""; $("#leadDialog").showModal();
+}
+
+async function saveLead() {
+  const id = $("#leadId").value || uid(); const existing = state.leads.find((item) => item.id === id);
+  const data = { id, name: $("#leadName").value.trim(), phone: $("#leadPhone").value.trim(), email: $("#leadEmail").value.trim().toLowerCase(), source: $("#leadSource").value, stage: $("#leadStage").value, ownerId: $("#leadOwner").value, campaignId: $("#leadCampaign").value, interest: $("#leadInterest").value.trim(), estimatedValue: Number($("#leadValue").value || 0), nextFollowUp: $("#leadNextFollowUp").value, notes: $("#leadNotes").value.trim(), createdAt: existing?.createdAt || new Date().toISOString(), updatedAt: new Date().toISOString(), createdBy: existing?.createdBy || auth.currentUser.uid, patientId: existing?.patientId || "" };
+  await getCollectionRef("leads").doc(id).set(data, { merge: true });
+  if (data.nextFollowUp && data.nextFollowUp !== existing?.nextFollowUp) await saveTask({ id: uid(), title: `Contactar prospecto: ${data.name}`, patientId: "", type: "follow_up", dueDate: data.nextFollowUp, priority: "normal", description: `${data.interest}${data.phone ? ` · ${data.phone}` : ""}`, status: "open", createdAt: new Date().toISOString(), createdBy: auth.currentUser.uid, updatedAt: new Date().toISOString(), leadId: id });
+  recordActivity({ action: existing ? "updated" : "created", entityType: "lead", entityId: id, title: existing ? "Prospecto actualizado" : "Prospecto creado", detail: `${data.name} · ${leadStages[data.stage]}` }).catch(console.error); $("#leadDialog").close(); toast("Prospecto guardado.");
+}
+
+async function moveLead(id, stage) {
+  const lead = state.leads.find((item) => item.id === id); if (!lead) return;
+  await getCollectionRef("leads").doc(id).set({ stage, updatedAt: new Date().toISOString(), stageChangedAt: new Date().toISOString() }, { merge: true }); recordActivity({ action: "stage_changed", entityType: "lead", entityId: id, title: "Etapa de prospecto actualizada", detail: `${lead.name} · ${leadStages[stage]}` }).catch(console.error); toast("Etapa actualizada.");
+}
+
+async function convertLead(id) {
+  const lead = state.leads.find((item) => item.id === id); if (!lead || !confirm(`¿Convertir a ${lead.name} en paciente?`)) return;
+  const patientId = lead.patientId || uid();
+  if (!lead.patientId) await savePatient({ id: patientId, name: lead.name, phone: lead.phone || "", email: lead.email || "", age: "", birthDate: "", language: "Español", payerType: "self_pay", insuranceCompany: "", insuranceMemberId: "", insuranceGroup: "", emailNotificationsEnabled: false, smsNotificationsEnabled: false, birthdayEmailEnabled: false, document: "", notes: lead.notes || "", source: lead.source || "", lifecycle: "new", patientAlertMessage: "", patientAlertDate: "", patientAlertActive: false, createdAt: new Date().toISOString(), leadId: id });
+  await getCollectionRef("leads").doc(id).set({ stage: "won", patientId, convertedAt: new Date().toISOString(), updatedAt: new Date().toISOString() }, { merge: true }); recordActivity({ action: "converted", entityType: "lead", entityId: id, patientId, title: "Prospecto convertido en paciente", detail: lead.name }).catch(console.error); toast("Prospecto convertido en paciente.");
+}
+
+function renderCampaigns() {
+  const box = $("#campaignList"); if (!box) return;
+  box.innerHTML = state.campaigns.length ? state.campaigns.map((campaign) => { const leads = state.leads.filter((lead) => lead.campaignId === campaign.id); const won = leads.filter((lead) => lead.stage === "won"); const cost = Number(campaign.budget || 0); return `<article class="campaign-card"><div><span class="badge ${campaign.status === "active" ? "green" : "blue"}">${campaign.status === "active" ? "Activa" : campaign.status === "completed" ? "Finalizada" : campaign.status === "paused" ? "Pausada" : "Planificada"}</span><h4>${escapeHtml(campaign.name)}</h4><small>${escapeHtml(campaign.channel)} · ${campaign.startDate || "Sin inicio"}</small></div><div><small>Prospectos</small><strong>${leads.length}</strong></div><div><small>Convertidos</small><strong>${won.length}</strong></div><div><small>Costo / conversión</small><strong>${won.length ? money(cost / won.length) : "—"}</strong></div><button class="btn light" onclick="openCampaignDialog('${campaign.id}')">Editar</button></article>`; }).join("") : `<div class="empty">No hay campañas registradas.</div>`;
+}
+
+function openCampaignDialog(id = "") {
+  const campaign = state.campaigns.find((item) => item.id === id); $("#campaignDialogTitle").textContent = campaign ? "Editar campaña" : "Nueva campaña"; $("#campaignId").value = campaign?.id || ""; $("#campaignName").value = campaign?.name || ""; $("#campaignChannel").value = campaign?.channel || "Google"; $("#campaignStatus").value = campaign?.status || "planned"; $("#campaignStart").value = campaign?.startDate || ""; $("#campaignEnd").value = campaign?.endDate || ""; $("#campaignBudget").value = campaign?.budget || ""; $("#campaignNotes").value = campaign?.notes || ""; $("#campaignDialog").showModal();
+}
+
+async function saveCampaign() {
+  const id = $("#campaignId").value || uid(); const existing = state.campaigns.find((item) => item.id === id); const data = { id, name: $("#campaignName").value.trim(), channel: $("#campaignChannel").value, status: $("#campaignStatus").value, startDate: $("#campaignStart").value, endDate: $("#campaignEnd").value, budget: Number($("#campaignBudget").value || 0), notes: $("#campaignNotes").value.trim(), createdAt: existing?.createdAt || new Date().toISOString(), updatedAt: new Date().toISOString(), createdBy: existing?.createdBy || auth.currentUser.uid };
+  await getCollectionRef("campaigns").doc(id).set(data, { merge: true }); recordActivity({ action: existing ? "updated" : "created", entityType: "campaign", entityId: id, title: existing ? "Campaña actualizada" : "Campaña creada", detail: data.name }).catch(console.error); $("#campaignDialog").close(); toast("Campaña guardada.");
+}
+
 function renderSettings() {
   const clinicName = state.settings.clinicName || "Clinic Control";
   $("#clinicBrandName").textContent = clinicName;
@@ -1865,7 +1948,7 @@ async function updateTeamMember(memberId, changes) {
   } catch (error) { console.error(error); toast("No se pudieron actualizar los permisos."); }
 }
 
-const activityIcons = { patient: "●", visit: "◆", appointment: "▦", payment: "$", document: "▤", signature: "✍", task: "✓", alert: "📌", form: "☷", communication: "☎", clinical: "✚", system: "•" };
+const activityIcons = { patient: "●", visit: "◆", appointment: "▦", payment: "$", document: "▤", signature: "✍", task: "✓", alert: "📌", form: "☷", communication: "☎", clinical: "✚", lead: "◇", campaign: "◎", system: "•" };
 function renderAuditLogPreview() {
   const box = $("#auditLogPreview"); if (!box) return;
   const rows = state.activities.slice(0, 20);
@@ -2169,6 +2252,8 @@ function openPatientDialog(p = null) {
   $("#patientBirthdayEmail").checked = Boolean(p?.birthdayEmailEnabled);
   $("#patientDocument").value = p?.document || "";
   $("#patientNotes").value = p?.notes || "";
+  $("#patientSource").value = p?.source || "";
+  $("#patientLifecycle").value = p?.lifecycle || "active";
   $("#patientAlertMessage").value = p?.patientAlertMessage || "";
   $("#patientAlertDate").value = p?.patientAlertDate || "";
   $("#patientAlertActive").checked = Boolean(p?.patientAlertActive);
@@ -2456,6 +2541,7 @@ window.openFormTemplateDialog = openFormTemplateDialog; window.deleteFormTemplat
 window.assignDigitalForm = assignDigitalForm; window.createPatientFormResponse = createPatientFormResponse; window.openPatientDigitalForm = openPatientDigitalForm;
 window.openCommunicationDialog = openCommunicationDialog;
 window.openClinicalRecordDialog = openClinicalRecordDialog;
+window.openLeadDialog = openLeadDialog; window.moveLead = moveLead; window.convertLead = convertLead; window.openCampaignDialog = openCampaignDialog;
 
 // El expediente de consulta vive dentro del área principal, no como ventana emergente.
 $(".main").appendChild($("#visitDialog"));
@@ -2659,6 +2745,8 @@ $("#patientForm").addEventListener("submit", async (event) => {
     birthdayEmailEnabled: $("#patientBirthdayEmail").checked,
     document: $("#patientDocument").value.trim(),
     notes: $("#patientNotes").value.trim(),
+    source: $("#patientSource").value,
+    lifecycle: $("#patientLifecycle").value,
     patientAlertMessage: $("#patientAlertMessage").value.trim(),
     patientAlertDate: $("#patientAlertMessage").value.trim() ? $("#patientAlertDate").value : "",
     patientAlertActive: Boolean($("#patientAlertMessage").value.trim() && $("#patientAlertActive").checked),
@@ -2838,6 +2926,10 @@ $("#formTemplateForm").addEventListener("submit", async (event) => { event.preve
 $("#patientDigitalForm").addEventListener("submit", async (event) => { event.preventDefault(); try { await savePatientDigitalForm(); } catch (error) { console.error(error); toast("No se pudieron guardar las respuestas."); } });
 $("#communicationForm").addEventListener("submit", async (event) => { event.preventDefault(); try { await saveCommunication(); } catch (error) { console.error(error); toast("No se pudo registrar la comunicación."); } });
 $("#clinicalRecordForm").addEventListener("submit", async (event) => { event.preventDefault(); try { await saveClinicalRecord(); } catch (error) { console.error(error); toast("No se pudo guardar el resumen clínico."); } });
+$("#leadCreateBtn").addEventListener("click", () => openLeadDialog()); $("#campaignCreateBtn").addEventListener("click", () => openCampaignDialog());
+$("#leadSearch").addEventListener("input", renderCrm); $("#leadSourceFilter").addEventListener("change", renderCrm); $("#leadOwnerFilter").addEventListener("change", renderCrm);
+$("#leadForm").addEventListener("submit", async (event) => { event.preventDefault(); try { await saveLead(); } catch (error) { console.error(error); toast("No se pudo guardar el prospecto."); } });
+$("#campaignForm").addEventListener("submit", async (event) => { event.preventDefault(); try { await saveCampaign(); } catch (error) { console.error(error); toast("No se pudo guardar la campaña."); } });
 
 ["clinicName", "invoicePrefix", "invoiceAccentColor", "invoiceLogoPosition", "invoiceFooter"].forEach((id) => {
   document.getElementById(id).addEventListener("input", renderInvoiceStylePreview);

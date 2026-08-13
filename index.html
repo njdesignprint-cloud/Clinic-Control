@@ -124,6 +124,9 @@
         <button class="nav-item" data-page="patients">
           <span>●</span> Pacientes
         </button>
+        <button class="nav-item" data-page="crm">
+          <span>◇</span> CRM
+        </button>
         <button class="nav-item" data-page="appointments">
           <span>▦</span> Citas
         </button>
@@ -425,6 +428,14 @@
         <div id="taskBoard" class="task-board"></div>
       </section>
 
+      <section class="page" id="crm">
+        <div class="section-top"><div><h2>CRM y captación</h2><p>Gestiona prospectos desde el primer contacto hasta convertirlos en pacientes.</p></div><div class="section-actions"><button class="btn light" id="campaignCreateBtn">+ Campaña</button><button class="btn primary" id="leadCreateBtn">+ Nuevo prospecto</button></div></div>
+        <div id="crmMetrics" class="crm-metrics"></div>
+        <div class="panel-toolbar crm-toolbar"><input id="leadSearch" type="search" placeholder="Buscar prospecto, teléfono, interés..." /><select id="leadSourceFilter"><option value="">Todas las fuentes</option><option>Google</option><option>Facebook</option><option>Instagram</option><option>Referido</option><option>Sitio web</option><option>Llamada</option><option>Walk-in</option><option>Otro</option></select><select id="leadOwnerFilter"><option value="">Todos los responsables</option></select></div>
+        <div id="crmPipeline" class="crm-pipeline"></div>
+        <div class="crm-campaign-section"><div class="patient-record-section-head"><h3>Campañas</h3></div><div id="campaignList" class="campaign-list"></div></div>
+      </section>
+
       <section class="page" id="invoices">
         <div class="section-top">
           <div>
@@ -651,7 +662,10 @@
           <textarea id="patientNotes" rows="3" placeholder="Información médica o administrativa relevante"></textarea>
           <small class="field-hint">Este campo es opcional</small>
         </label>
-        <div class="form-section-title full"><span>4</span><div><strong>Alerta fijada</strong><small>Destaca compromisos de pago u otros asuntos pendientes</small></div></div>
+        <div class="form-section-title full"><span>4</span><div><strong>Origen y relación</strong><small>Información CRM para medir captación y retención</small></div></div>
+        <label class="field-group">Fuente de captación<select id="patientSource"><option value="">No indicada</option><option>Google</option><option>Facebook</option><option>Instagram</option><option>Referido</option><option>Sitio web</option><option>Llamada</option><option>Walk-in</option><option>Otro</option></select></label>
+        <label class="field-group">Estado CRM<select id="patientLifecycle"><option value="active">Paciente activo</option><option value="new">Paciente nuevo</option><option value="inactive">Inactivo</option><option value="lost">No regresó</option></select></label>
+        <div class="form-section-title full"><span>5</span><div><strong>Alerta fijada</strong><small>Destaca compromisos de pago u otros asuntos pendientes</small></div></div>
         <label class="field-group full">Mensaje destacado
           <textarea id="patientAlertMessage" rows="2" placeholder="Ej. El cliente indicó que vendrá mañana a pagar el balance."></textarea>
         </label>
@@ -935,6 +949,24 @@
         <label class="field-group full">Inmunizaciones<textarea id="clinicalImmunizations" rows="3" placeholder="Vacuna y fecha; una por línea"></textarea></label>
       </div></div>
       <div class="modal-actions"><button type="button" class="btn light" data-close="clinicalRecordDialog">Cancelar</button><button type="submit" class="btn primary">Guardar resumen clínico</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="leadDialog">
+    <form id="leadForm" class="modal wide-modal" method="dialog">
+      <div class="modal-head"><div><small>Embudo CRM</small><h3 id="leadDialogTitle">Nuevo prospecto</h3></div><button type="button" class="close-btn" data-close="leadDialog">×</button></div>
+      <div class="modal-body"><input id="leadId" type="hidden" /><div class="form-grid">
+        <label class="field-group required">Nombre completo<input id="leadName" required /></label><label class="field-group">Teléfono<input id="leadPhone" type="tel" /></label><label class="field-group">Correo<input id="leadEmail" type="email" /></label><label class="field-group">Fuente<select id="leadSource"><option>Google</option><option>Facebook</option><option>Instagram</option><option>Referido</option><option>Sitio web</option><option>Llamada</option><option>Walk-in</option><option>Otro</option></select></label>
+        <label class="field-group">Etapa<select id="leadStage"><option value="new">Nuevo</option><option value="contacted">Contactado</option><option value="scheduled">Cita programada</option><option value="won">Convertido</option><option value="lost">Perdido</option></select></label><label class="field-group">Responsable<select id="leadOwner"></select></label><label class="field-group">Campaña<select id="leadCampaign"><option value="">Sin campaña</option></select></label><label class="field-group">Valor estimado<input id="leadValue" type="number" min="0" step="0.01" placeholder="0.00" /></label>
+        <label class="field-group full">Servicio de interés<input id="leadInterest" placeholder="Ej. Consulta inicial, terapia, procedimiento" /></label><label class="field-group">Próximo contacto<input id="leadNextFollowUp" type="datetime-local" /></label><label class="field-group full">Notas<textarea id="leadNotes" rows="4"></textarea></label>
+      </div></div><div class="modal-actions"><button type="button" class="btn light" data-close="leadDialog">Cancelar</button><button type="submit" class="btn primary">Guardar prospecto</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="campaignDialog">
+    <form id="campaignForm" class="modal compact-modal" method="dialog">
+      <div class="modal-head"><div><small>Captación</small><h3 id="campaignDialogTitle">Nueva campaña</h3></div><button type="button" class="close-btn" data-close="campaignDialog">×</button></div>
+      <div class="modal-body"><input id="campaignId" type="hidden" /><div class="form-grid"><label class="field-group full">Nombre<input id="campaignName" required /></label><label class="field-group">Canal<select id="campaignChannel"><option>Google</option><option>Facebook</option><option>Instagram</option><option>Email</option><option>SMS</option><option>Referidos</option><option>Otro</option></select></label><label class="field-group">Estado<select id="campaignStatus"><option value="planned">Planificada</option><option value="active">Activa</option><option value="paused">Pausada</option><option value="completed">Finalizada</option></select></label><label class="field-group">Inicio<input id="campaignStart" type="date" /></label><label class="field-group">Fin<input id="campaignEnd" type="date" /></label><label class="field-group">Presupuesto<input id="campaignBudget" type="number" min="0" step="0.01" /></label><label class="field-group full">Audiencia / notas<textarea id="campaignNotes" rows="3"></textarea></label></div></div><div class="modal-actions"><button type="button" class="btn light" data-close="campaignDialog">Cancelar</button><button type="submit" class="btn primary">Guardar campaña</button></div>
     </form>
   </dialog>
 

@@ -60,6 +60,12 @@ service cloud.firestore {
     match /clinics/{clinicId}/clinicalRecords/{document=**} {
       allow read, write: if hasRole(clinicId, ['admin', 'clinical']);
     }
+    match /clinics/{clinicId}/leads/{document=**} {
+      allow read, write: if hasRole(clinicId, ['admin', 'reception']);
+    }
+    match /clinics/{clinicId}/campaigns/{document=**} {
+      allow read, write: if hasRole(clinicId, ['admin', 'reception']);
+    }
     match /clinics/{clinicId}/activities/{document=**} {
       allow read: if belongsTo(clinicId);
       allow create: if belongsTo(clinicId) && request.resource.data.userId == request.auth.uid;
