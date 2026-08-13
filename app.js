@@ -1,7 +1,9 @@
-let state = { settings: {}, patients: [], visits: [], appointments: [], payments: [], documents: [], tasks: [], activities: [] };
+let state = { settings: {}, patients: [], visits: [], appointments: [], payments: [], documents: [], tasks: [], activities: [], teamMembers: [] };
 let firestore = null;
 let auth = null;
 let storage = null;
+let activeClinicId = null;
+let currentAccess = { role: "admin", status: "active", name: "" };
 let unsubscribeSettings = null;
 let unsubscribePatients = null;
 let unsubscribeVisits = null;
@@ -10,6 +12,7 @@ let unsubscribePayments = null;
 let unsubscribeDocuments = null;
 let unsubscribeTasks = null;
 let unsubscribeActivities = null;
+let unsubscribeTeamMembers = null;
 let activeInvoiceId = null;
 let activeBillingTab = "all";
 let activeFinancePatientId = null;
@@ -141,7 +144,7 @@ function getClinicDocRef() {
     throw new Error("Usuario no autenticado");
   }
 
-  return firestore.collection("clinics").doc(auth.currentUser.uid);
+  return firestore.collection("clinics").doc(activeClinicId || auth.currentUser.uid);
 }
 
 function getCollectionRef(collectionName) {
@@ -157,6 +160,7 @@ function unsubscribeAll() {
   if (unsubscribeDocuments) unsubscribeDocuments();
   if (unsubscribeTasks) unsubscribeTasks();
   if (unsubscribeActivities) unsubscribeActivities();
+  if (unsubscribeTeamMembers) unsubscribeTeamMembers();
   unsubscribeSettings = null;
   unsubscribePatients = null;
   unsubscribeVisits = null;
@@ -165,6 +169,7 @@ function unsubscribeAll() {
   unsubscribeDocuments = null;
   unsubscribeTasks = null;
   unsubscribeActivities = null;
+  unsubscribeTeamMembers = null;
 }
 
 function showAuthScreen() {
@@ -179,7 +184,7 @@ function showAppScreen() {
 }
 
 function clearState() {
-  state = { settings: {}, patients: [], visits: [], appointments: [], payments: [], documents: [], tasks: [], activities: [] };
+  state = { settings: {}, patients: [], visits: [], appointments: [], payments: [], documents: [], tasks: [], activities: [], teamMembers: [] };
   render();
 }
 
@@ -194,6 +199,7 @@ function subscribeToRealtime() {
   const documentsRef = getCollectionRef("documents");
   const tasksRef = getCollectionRef("tasks");
   const activitiesRef = getCollectionRef("activities");
+  const teamMembersRef = getCollectionRef("members");
 
   unsubscribeSettings = settingsRef.onSnapshot((doc) => {
     if (doc.exists) {
@@ -207,35 +213,77 @@ function subscribeToRealtime() {
     render();
   });
 
-  unsubscribeVisits = visitsRef.onSnapshot((snapshot) => {
-    state.visits = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
-    render();
-    if ($("#visitDialog")?.classList.contains("active") && $("#visitId")?.value) renderVisitPaymentPanel(state.visits.find((visit) => visit.id === $("#visitId").value));
-  });
-  unsubscribeAppointments = appointmentsRef.onSnapshot((snapshot) => {
-    state.appointments = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
-    render();
-  });
-  unsubscribePayments = paymentsRef.onSnapshot((snapshot) => {
-    state.payments = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
-    render();
-    if ($("#visitDialog")?.classList.contains("active") && $("#visitId")?.value) renderVisitPaymentPanel(state.visits.find((visit) => visit.id === $("#visitId").value));
-  });
-  unsubscribeDocuments = documentsRef.orderBy("createdAt", "desc").onSnapshot((snapshot) => {
-    state.documents = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
-    renderSettings();
-  });
-  unsubscribeTasks = tasksRef.onSnapshot((snapshot) => {
-    state.tasks = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
-    renderTasks();
-    renderTaskNavCount();
-    if ($("#patientRecord")?.classList.contains("active") && activePatientRecordId) renderPatientRecord();
-  });
+  if (["admin", "clinical", "accounting"].includes(currentAccess.role)) unsubscribeVisits = visitsRef.onSnapshot((snapshot) => {
+      state.visits = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+      render();
+      if ($("#visitDialog")?.classList.contains("active") && $("#visitId")?.value) renderVisitPaymentPanel(state.visits.find((visit) => visit.id === $("#visitId").value));
+    });
+  if (["admin", "reception", "clinical"].includes(currentAccess.role)) unsubscribeAppointments = appointmentsRef.onSnapshot((snapshot) => {
+      state.appointments = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+      render();
+    });
+  if (["admin", "accounting"].includes(currentAccess.role)) unsubscribePayments = paymentsRef.onSnapshot((snapshot) => {
+      state.payments = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+      render();
+      if ($("#visitDialog")?.classList.contains("active") && $("#visitId")?.value) renderVisitPaymentPanel(state.visits.find((visit) => visit.id === $("#visitId").value));
+    });
+  if (["admin", "clinical"].includes(currentAccess.role)) unsubscribeDocuments = documentsRef.orderBy("createdAt", "desc").onSnapshot((snapshot) => {
+      state.documents = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+      renderSettings();
+    });
+  if (["admin", "reception", "clinical"].includes(currentAccess.role)) unsubscribeTasks = tasksRef.onSnapshot((snapshot) => {
+      state.tasks = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+      renderTasks();
+      renderTaskNavCount();
+      if ($("#patientRecord")?.classList.contains("active") && activePatientRecordId) renderPatientRecord();
+    });
   unsubscribeActivities = activitiesRef.orderBy("createdAt", "desc").limit(250).onSnapshot((snapshot) => {
     state.activities = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
     renderAuditLogPreview();
     if ($("#patientRecord")?.classList.contains("active") && activePatientRecordId && activePatientRecordTab === "timeline") renderPatientRecord();
   });
+  unsubscribeTeamMembers = teamMembersRef.onSnapshot((snapshot) => {
+    state.teamMembers = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+    renderTeamMembers();
+  });
+}
+
+const roleLabels = { admin: "Administrador", reception: "Recepción", clinical: "Profesional clínico", accounting: "Contabilidad" };
+const rolePages = {
+  admin: ["dashboard", "patients", "appointments", "tasks", "visits", "billing", "invoices", "reports", "settings", "patientRecord", "visitDialog"],
+  reception: ["dashboard", "patients", "appointments", "tasks", "patientRecord"],
+  clinical: ["dashboard", "patients", "appointments", "tasks", "visits", "patientRecord", "visitDialog"],
+  accounting: ["dashboard", "patients", "billing", "invoices", "reports", "patientRecord"]
+};
+const patientRecordTabsByRole = {
+  admin: ["summary", "visits", "documents", "payments", "alerts", "timeline"],
+  reception: ["summary", "alerts", "timeline"],
+  clinical: ["summary", "visits", "documents", "alerts", "timeline"],
+  accounting: ["summary", "visits", "payments", "timeline"]
+};
+
+function canAccessPage(pageId) {
+  return (rolePages[currentAccess.role] || rolePages.reception).includes(pageId);
+}
+
+async function resolveUserAccess(user) {
+  const profileDoc = await firestore.collection("userProfiles").doc(user.uid).get();
+  if (profileDoc.exists) {
+    const profile = profileDoc.data();
+    if (profile.status === "disabled") throw new Error("Esta cuenta fue desactivada por el administrador.");
+    activeClinicId = profile.clinicId;
+    currentAccess = { role: profile.role || "reception", status: profile.status || "active", name: profile.name || "" };
+  } else {
+    activeClinicId = user.uid;
+    currentAccess = { role: "admin", status: "active", name: user.displayName || "Propietario" };
+  }
+}
+
+function applyRoleAccess() {
+  $$(".nav-item").forEach((item) => item.classList.toggle("role-hidden", !canAccessPage(item.dataset.page)));
+  $$('[data-patient-record-tab]').forEach((item) => item.classList.toggle("role-hidden", !(patientRecordTabsByRole[currentAccess.role] || []).includes(item.dataset.patientRecordTab)));
+  const settingsForm = $("#settingsForm");
+  if (settingsForm) settingsForm.classList.toggle("read-only-role", currentAccess.role !== "admin");
 }
 
 async function removeLegacyDemoData(settingsDoc, patientsSnap, visitsSnap) {
@@ -273,13 +321,14 @@ async function loadClinicData() {
   const patientsRef = getCollectionRef("patients");
   const visitsRef = getCollectionRef("visits");
 
+  const canReadVisits = ["admin", "clinical", "accounting"].includes(currentAccess.role);
   const [settingsDoc, patientsSnap, visitsSnap] = await Promise.all([
     settingsRef.get(),
     patientsRef.get(),
-    visitsRef.get()
+    canReadVisits ? visitsRef.get() : Promise.resolve({ empty: true, docs: [] })
   ]);
 
-  if (await removeLegacyDemoData(settingsDoc, patientsSnap, visitsSnap)) {
+  if (currentAccess.role === "admin" && await removeLegacyDemoData(settingsDoc, patientsSnap, visitsSnap)) {
     state = buildSeedState();
     subscribeToRealtime();
     render();
@@ -388,7 +437,7 @@ async function uploadClinicDocument(file) {
   if (file.size > 10 * 1024 * 1024) throw new Error(`${file.name}: supera el máximo de 10 MB.`);
   const id = uid();
   const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-  const path = `clinics/${auth.currentUser.uid}/documents/${id}/${safeName}`;
+  const path = `clinics/${activeClinicId}/documents/${id}/${safeName}`;
   const ref = storage.ref(path);
   await ref.put(file, { contentType: file.type });
   const url = await ref.getDownloadURL();
@@ -507,7 +556,7 @@ function payerLabel(p) {
 function updateUserInfo() {
   const user = auth.currentUser;
   if (user) {
-    $("#userInfo").textContent = `Sesión: ${user.email || user.uid}`;
+    $("#userInfo").textContent = `${currentAccess.name || user.email || user.uid} · ${roleLabels[currentAccess.role] || currentAccess.role}`;
   } else {
     $("#userInfo").textContent = "";
   }
@@ -614,6 +663,10 @@ function toast(message) {
 }
 
 function showPage(pageId) {
+  if (!canAccessPage(pageId)) {
+    toast("Tu rol no tiene permiso para abrir este módulo.");
+    pageId = "dashboard";
+  }
   $$(".page").forEach((page) => page.classList.toggle("active", page.id === pageId));
   $$(".nav-item").forEach((item) => item.classList.toggle("active", item.dataset.page === (pageId === "visitDialog" ? "visits" : pageId === "patientRecord" ? "patients" : pageId)));
 
@@ -770,9 +823,9 @@ function renderPatients() {
       <td>${fmtDate(p.createdAt)}</td>
       <td>
         <div class="row-actions">
-          <button class="icon-btn" onclick="editPatient('${p.id}')" title="Editar">✎</button>
-          <button class="icon-btn finance-patient-btn" onclick="openPatientFinance('${p.id}')" title="Ver cuenta">$</button>
-          <button class="icon-btn" onclick="deletePatient('${p.id}')" title="Eliminar">⌫</button>
+          ${["admin", "reception", "clinical"].includes(currentAccess.role) ? `<button class="icon-btn" onclick="editPatient('${p.id}')" title="Editar">✎</button>` : ""}
+          ${["admin", "accounting"].includes(currentAccess.role) ? `<button class="icon-btn finance-patient-btn" onclick="openPatientFinance('${p.id}')" title="Ver cuenta">$</button>` : ""}
+          ${currentAccess.role === "admin" ? `<button class="icon-btn" onclick="deletePatient('${p.id}')" title="Eliminar">⌫</button>` : ""}
         </div>
       </td>
     </tr>
@@ -848,6 +901,8 @@ function openPatientRecord(id, tabName = "summary") {
 function renderPatientRecord() {
   const p = patient(activePatientRecordId);
   if (!p) return showPage("patients");
+  const allowedTabs = patientRecordTabsByRole[currentAccess.role] || ["summary"];
+  if (!allowedTabs.includes(activePatientRecordTab)) activePatientRecordTab = "summary";
   const visits = state.visits.filter((visit) => visit.patientId === p.id).sort((a, b) => new Date(b.date) - new Date(a.date));
   const recordedPayments = state.payments.filter((entry) => entry.patientId === p.id);
   const initialPayments = visits.flatMap((visit) => {
@@ -869,7 +924,10 @@ function renderPatientRecord() {
   const timeline = [...patientActivities, ...historicEvents.filter((event) => !auditedIds.has(event.id))].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   const data = totals(visits);
   const initials = p.name.split(/\s+/).slice(0, 2).map((part) => part[0]).join("").toUpperCase();
-  $("#patientRecordHeader").innerHTML = `<button class="btn light" onclick="showPage('patients')">← Pacientes</button><div class="patient-record-avatar">${escapeHtml(initials)}</div><div class="patient-record-identity"><small>Expediente del paciente</small><h2>${escapeHtml(p.name)}</h2><span>${escapeHtml([p.document, p.phone, p.email].filter(Boolean).join(" · ") || "Información de contacto no indicada")}</span></div><div class="patient-record-actions"><button class="btn light" onclick="editPatient('${p.id}')">Editar</button><button class="btn primary" onclick="openVisitDialog({patientId:'${p.id}'})">Nueva consulta</button></div>`;
+  const canEditPatient = ["admin", "reception", "clinical"].includes(currentAccess.role);
+  const canCreateVisit = ["admin", "clinical"].includes(currentAccess.role);
+  $("#patientRecordHeader").innerHTML = `<button class="btn light" onclick="showPage('patients')">← Pacientes</button><div class="patient-record-avatar">${escapeHtml(initials)}</div><div class="patient-record-identity"><small>Expediente del paciente</small><h2>${escapeHtml(p.name)}</h2><span>${escapeHtml([p.document, p.phone, p.email].filter(Boolean).join(" · ") || "Información de contacto no indicada")}</span></div><div class="patient-record-actions">${canEditPatient ? `<button class="btn light" onclick="editPatient('${p.id}')">Editar</button>` : ""}${canCreateVisit ? `<button class="btn primary" onclick="openVisitDialog({patientId:'${p.id}'})">Nueva consulta</button>` : ""}</div>`;
+  applyRoleAccess();
   $$('[data-patient-record-tab]').forEach((button) => button.classList.toggle("active", button.dataset.patientRecordTab === activePatientRecordTab));
   const summary = `${patientHasAlert(p) ? `<div class="patient-finance-alert"><div><strong>📌 ${escapeHtml(p.patientAlertMessage)}</strong><span>${patientAlertDateLabel(p)}</span></div><button class="btn light" onclick="resolvePatientAlert('${p.id}')">Marcar resuelta</button></div>` : ""}<div class="patient-record-metrics"><div><small>Consultas</small><strong>${visits.length}</strong></div><div><small>Facturado</small><strong>${money(data.billed)}</strong></div><div><small>Pagado</small><strong>${money(data.paid)}</strong></div><div><small>Balance</small><strong>${money(data.debt)}</strong></div></div><div class="patient-record-grid"><article><h3>Información</h3><dl><div><dt>Nacimiento</dt><dd>${fmtBirthDate(p.birthDate)}</dd></div><div><dt>Edad</dt><dd>${escapeHtml(p.age || "—")}</dd></div><div><dt>Idioma</dt><dd>${escapeHtml(p.language || "—")}</dd></div><div><dt>Forma de pago</dt><dd>${escapeHtml(payerLabel(p))}</dd></div><div><dt>Seguro</dt><dd>${escapeHtml(p.insuranceCompany || "—")}</dd></div></dl></article><article><h3>Notas</h3><p>${escapeHtml(p.notes || "No hay notas generales para este paciente.")}</p></article></div>`;
   const visitHtml = visits.length ? `<div class="patient-record-list">${visits.map((visit) => `<div><span><strong>${fmtDate(visit.date)} · ${escapeHtml(visit.reason || "Consulta")}</strong><small>${escapeHtml(visit.doctor || "Sin profesional")} · ${escapeHtml(invoiceNumber(visit))}</small></span><span><strong>${money(visit.total)}</strong><small>Balance ${money(balance(visit))}</small></span><button class="btn light" onclick="editVisit('${visit.id}')">Abrir</button></div>`).join("")}</div>` : `<div class="empty">Este paciente todavía no tiene consultas.</div>`;
@@ -1022,9 +1080,9 @@ function renderVisits() {
         <td><span class="badge ${due > 0 ? "red" : "green"}">${money(due)}</span></td>
         <td>
           <div class="row-actions">
-            ${visitDocuments.length ? `<button class="icon-btn signature-action ${pendingDocuments ? "has-pending" : "all-signed"}" onclick="openSignatureDialog('${visit.id}')" title="${pendingDocuments ? `${pendingDocuments} documento(s) pendiente(s) de firma` : "Documentos firmados"}">✍</button>` : ""}
-            <button class="icon-btn" onclick="editVisit('${visit.id}')" title="Editar">✎</button>
-            <button class="icon-btn" onclick="deleteVisit('${visit.id}')" title="Eliminar">⌫</button>
+            ${visitDocuments.length && ["admin", "clinical"].includes(currentAccess.role) ? `<button class="icon-btn signature-action ${pendingDocuments ? "has-pending" : "all-signed"}" onclick="openSignatureDialog('${visit.id}')" title="${pendingDocuments ? `${pendingDocuments} documento(s) pendiente(s) de firma` : "Documentos firmados"}">✍</button>` : ""}
+            ${["admin", "clinical"].includes(currentAccess.role) ? `<button class="icon-btn" onclick="editVisit('${visit.id}')" title="Editar">✎</button>` : ""}
+            ${currentAccess.role === "admin" ? `<button class="icon-btn" onclick="deleteVisit('${visit.id}')" title="Eliminar">⌫</button>` : ""}
           </div>
         </td>
       </tr>
@@ -1574,6 +1632,58 @@ function renderSettings() {
   renderInvoiceStylePreview();
   renderClinicDocuments();
   renderAuditLogPreview();
+  renderTeamMembers();
+  applyRoleAccess();
+}
+
+function renderTeamMembers() {
+  const container = $("#teamMembersList");
+  if (!container) return;
+  if (currentAccess.role !== "admin") {
+    container.innerHTML = `<div class="empty">Solo los administradores pueden gestionar usuarios.</div>`;
+    return;
+  }
+  const owner = { id: activeClinicId, name: "Propietario de la clínica", email: state.settings.clinicEmail || auth?.currentUser?.email || "", role: "admin", status: "active", owner: true };
+  const members = [owner, ...state.teamMembers.filter((member) => member.id !== activeClinicId)];
+  container.innerHTML = members.map((member) => `<div class="team-member-row"><div class="team-member-avatar">${escapeHtml((member.name || member.email || "U").slice(0, 1).toUpperCase())}</div><span><strong>${escapeHtml(member.name || "Usuario")}</strong><small>${escapeHtml(member.email || "")}${member.owner ? " · Propietario" : ""}</small></span><select aria-label="Rol" onchange="updateTeamMember('${member.id}', {role:this.value})" ${member.owner ? "disabled" : ""}>${Object.entries(roleLabels).map(([value, label]) => `<option value="${value}" ${member.role === value ? "selected" : ""}>${label}</option>`).join("")}</select>${member.owner ? `<span class="badge green">Activo</span>` : `<button class="btn light" type="button" onclick="updateTeamMember('${member.id}', {status:'${member.status === "disabled" ? "active" : "disabled"}'})">${member.status === "disabled" ? "Activar" : "Desactivar"}</button>`}</div>`).join("");
+}
+
+async function createTeamMember() {
+  if (currentAccess.role !== "admin") return toast("Solo un administrador puede agregar usuarios.");
+  const name = $("#teamMemberName").value.trim();
+  const email = $("#teamMemberEmail").value.trim().toLowerCase();
+  const password = $("#teamMemberPassword").value;
+  const role = $("#teamMemberRole").value;
+  if (!name || !email || password.length < 6) return toast("Completa nombre, correo y una contraseña temporal de 6 caracteres.");
+  let secondaryApp;
+  try {
+    secondaryApp = firebase.apps.find((app) => app.name === "team-member-creator") || firebase.initializeApp(window.firebaseConfig, "team-member-creator");
+    const credential = await secondaryApp.auth().createUserWithEmailAndPassword(email, password);
+    const profile = { uid: credential.user.uid, clinicId: activeClinicId, name, email, role, status: "active", createdAt: new Date().toISOString(), createdBy: auth.currentUser.uid };
+    const batch = firestore.batch();
+    batch.set(firestore.collection("userProfiles").doc(credential.user.uid), profile);
+    batch.set(getCollectionRef("members").doc(credential.user.uid), profile);
+    await batch.commit();
+    await secondaryApp.auth().signOut();
+    $("#teamMemberName").value = ""; $("#teamMemberEmail").value = ""; $("#teamMemberPassword").value = "";
+    recordActivity({ action: "created", entityType: "system", entityId: credential.user.uid, title: "Usuario agregado", detail: `${name} · ${roleLabels[role]}` }).catch(console.error);
+    toast("Usuario agregado correctamente.");
+  } catch (error) {
+    console.error(error);
+    toast(getAuthErrorMessage(error, "register"));
+  }
+}
+
+async function updateTeamMember(memberId, changes) {
+  if (currentAccess.role !== "admin" || memberId === activeClinicId) return;
+  try {
+    const batch = firestore.batch();
+    batch.set(getCollectionRef("members").doc(memberId), { ...changes, updatedAt: new Date().toISOString() }, { merge: true });
+    batch.set(firestore.collection("userProfiles").doc(memberId), { ...changes, updatedAt: new Date().toISOString() }, { merge: true });
+    await batch.commit();
+    recordActivity({ action: "updated", entityType: "system", entityId: memberId, title: "Acceso de usuario actualizado", detail: changes.role ? roleLabels[changes.role] : changes.status === "disabled" ? "Usuario desactivado" : "Usuario activado" }).catch(console.error);
+    toast("Permisos actualizados.");
+  } catch (error) { console.error(error); toast("No se pudieron actualizar los permisos."); }
 }
 
 const activityIcons = { patient: "●", visit: "◆", appointment: "▦", payment: "$", document: "▤", signature: "✍", task: "✓", alert: "📌", system: "•" };
@@ -1701,7 +1811,7 @@ async function saveCurrentSignature() {
     const canvas = $("#signatureCanvas");
     const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
     const signatureId = uid();
-    const path = `clinics/${auth.currentUser.uid}/signatures/${visit.id}/${documentItem.documentId}/${signatureId}.png`;
+    const path = `clinics/${activeClinicId}/signatures/${visit.id}/${documentItem.documentId}/${signatureId}.png`;
     const ref = storage.ref(path);
     await ref.put(blob, { contentType: "image/png" });
     const signatureUrl = await ref.getDownloadURL();
@@ -2520,6 +2630,8 @@ $("#removeClinicLogo").addEventListener("click", () => {
   toast("Logo removido. Guarda los cambios.");
 });
 
+$("#addTeamMember").addEventListener("click", createTeamMember);
+
 ["clinicName", "invoicePrefix", "invoiceAccentColor", "invoiceLogoPosition", "invoiceFooter"].forEach((id) => {
   document.getElementById(id).addEventListener("input", renderInvoiceStylePreview);
   document.getElementById(id).addEventListener("change", renderInvoiceStylePreview);
@@ -2632,15 +2744,22 @@ $("#registerShowPassword").addEventListener("change", (event) => {
   $("#registerConfirm").type = show ? "text" : "password";
 });
 
-function handleAuthState(user) {
+async function handleAuthState(user) {
   if (user) {
-    updateUserInfo();
-    showAppScreen();
-    loadClinicData().catch((error) => {
+    try {
+      await resolveUserAccess(user);
+      updateUserInfo();
+      applyRoleAccess();
+      showAppScreen();
+      await loadClinicData();
+    } catch (error) {
       console.error(error);
-      toast("No se pudo cargar datos de la clínica.");
-    });
+      toast(error.message || "No se pudo cargar datos de la clínica.");
+      await auth.signOut();
+    }
   } else {
+    activeClinicId = null;
+    currentAccess = { role: "admin", status: "active", name: "" };
     showAuthScreen();
   }
 }

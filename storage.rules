@@ -2,8 +2,24 @@ rules_version = '2';
 
 service firebase.storage {
   match /b/{bucket}/o {
-    match /clinics/{clinicId}/{allPaths=**} {
-      allow read, write: if request.auth != null && request.auth.uid == clinicId;
+    function hasProfile() {
+      return request.auth != null && firestore.exists(/databases/(default)/documents/userProfiles/$(request.auth.uid));
+    }
+    function profile() {
+      return firestore.get(/databases/(default)/documents/userProfiles/$(request.auth.uid)).data;
+    }
+    function belongsTo(clinicId) {
+      return request.auth != null && (request.auth.uid == clinicId || (hasProfile() && profile().clinicId == clinicId && profile().status == 'active'));
+    }
+    function roleFor(clinicId) {
+      return request.auth.uid == clinicId ? 'admin' : profile().role;
+    }
+    match /clinics/{clinicId}/documents/{allPaths=**} {
+      allow read: if belongsTo(clinicId) && roleFor(clinicId) in ['admin', 'clinical'];
+      allow write: if belongsTo(clinicId) && roleFor(clinicId) == 'admin';
+    }
+    match /clinics/{clinicId}/signatures/{allPaths=**} {
+      allow read, write: if belongsTo(clinicId) && roleFor(clinicId) in ['admin', 'clinical'];
     }
   }
 }

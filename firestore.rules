@@ -1,0 +1,56 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function hasProfile() { return signedIn() && exists(/databases/$(database)/documents/userProfiles/$(request.auth.uid)); }
+    function profile() { return get(/databases/$(database)/documents/userProfiles/$(request.auth.uid)).data; }
+    function belongsTo(clinicId) {
+      return signedIn() && (request.auth.uid == clinicId || (hasProfile() && profile().clinicId == clinicId && profile().status == 'active'));
+    }
+    function roleFor(clinicId) { return request.auth.uid == clinicId ? 'admin' : profile().role; }
+    function hasRole(clinicId, roles) { return belongsTo(clinicId) && roleFor(clinicId) in roles; }
+
+    match /userProfiles/{userId} {
+      allow read: if signedIn() && (request.auth.uid == userId || (resource.data.clinicId != null && hasRole(resource.data.clinicId, ['admin'])));
+      allow create: if signedIn() && request.resource.data.clinicId != null && hasRole(request.resource.data.clinicId, ['admin']);
+      allow update: if signedIn() && resource.data.clinicId != null && hasRole(resource.data.clinicId, ['admin']);
+      allow delete: if false;
+    }
+
+    match /clinics/{clinicId}/settings/{document=**} {
+      allow read: if belongsTo(clinicId);
+      allow write: if hasRole(clinicId, ['admin']);
+    }
+    match /clinics/{clinicId}/members/{document=**} {
+      allow read: if belongsTo(clinicId);
+      allow write: if hasRole(clinicId, ['admin']);
+    }
+    match /clinics/{clinicId}/patients/{document=**} {
+      allow read: if belongsTo(clinicId);
+      allow write: if hasRole(clinicId, ['admin', 'reception', 'clinical']);
+    }
+    match /clinics/{clinicId}/visits/{document=**} {
+      allow read: if hasRole(clinicId, ['admin', 'clinical', 'accounting']);
+      allow write: if hasRole(clinicId, ['admin', 'clinical']);
+    }
+    match /clinics/{clinicId}/appointments/{document=**} {
+      allow read, write: if hasRole(clinicId, ['admin', 'reception', 'clinical']);
+    }
+    match /clinics/{clinicId}/tasks/{document=**} {
+      allow read, write: if hasRole(clinicId, ['admin', 'reception', 'clinical']);
+    }
+    match /clinics/{clinicId}/payments/{document=**} {
+      allow read, write: if hasRole(clinicId, ['admin', 'accounting']);
+    }
+    match /clinics/{clinicId}/documents/{document=**} {
+      allow read: if hasRole(clinicId, ['admin', 'clinical']);
+      allow write: if hasRole(clinicId, ['admin']);
+    }
+    match /clinics/{clinicId}/activities/{document=**} {
+      allow read: if belongsTo(clinicId);
+      allow create: if belongsTo(clinicId) && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if false;
+    }
+  }
+}

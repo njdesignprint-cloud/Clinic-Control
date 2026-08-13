@@ -528,6 +528,19 @@
           </div>
           <div class="invoice-preview full" id="invoiceStylePreview"></div>
 
+          <div class="settings-section-title full section-spaced"><strong>Equipo y permisos</strong><small>Agrega empleados y controla el acceso según su función.</small></div>
+          <div class="team-settings full">
+            <div class="team-create-grid">
+              <label>Nombre<input id="teamMemberName" type="text" placeholder="Nombre del empleado" /></label>
+              <label>Correo<input id="teamMemberEmail" type="email" placeholder="empleado@clinica.com" /></label>
+              <label>Contraseña temporal<input id="teamMemberPassword" type="password" minlength="6" placeholder="Mínimo 6 caracteres" /></label>
+              <label>Rol<select id="teamMemberRole"><option value="reception">Recepción</option><option value="clinical">Profesional clínico</option><option value="accounting">Contabilidad</option><option value="admin">Administrador</option></select></label>
+              <button class="btn primary" type="button" id="addTeamMember">Agregar usuario</button>
+            </div>
+            <div class="role-guide"><span><strong>Recepción:</strong> pacientes, agenda y tareas</span><span><strong>Clínico:</strong> expediente y consultas</span><span><strong>Contabilidad:</strong> cobros, facturas y reportes</span><span><strong>Administrador:</strong> acceso completo</span></div>
+            <div id="teamMembersList" class="team-members-list"></div>
+          </div>
+
           <div class="settings-section-title full section-spaced"><strong>Documentos para firma</strong><small>Sube los formularios que podrán seleccionarse durante una consulta.</small></div>
           <div class="document-settings full">
             <label class="document-upload">Agregar documento

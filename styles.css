@@ -1678,6 +1678,18 @@ td small {
 .audit-row > span { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 10px; color: var(--primary); background: #e6fffb; font-weight: 900; }
 .audit-row > div { display: grid; gap: 2px; }
 .audit-row small { color: var(--muted); }
+.role-hidden { display: none !important; }
+.team-settings { display: grid; gap: 16px; }
+.team-create-grid { display: grid; grid-template-columns: 1.1fr 1.2fr 1fr 1fr auto; gap: 12px; align-items: end; }
+.team-create-grid label { display: grid; gap: 6px; font-size: 12px; font-weight: 700; color: var(--muted); }
+.role-guide { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; padding: 12px; border-radius: 12px; background: #f8fafc; color: var(--muted); font-size: 12px; }
+.team-members-list { display: grid; gap: 8px; }
+.team-member-row { display: grid; grid-template-columns: 38px minmax(180px, 1fr) minmax(160px, 210px) auto; gap: 12px; align-items: center; padding: 12px; border: 1px solid var(--line); border-radius: 12px; }
+.team-member-avatar { width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; background: #dff7f3; color: var(--primary); font-weight: 800; }
+.team-member-row > span { display: grid; gap: 3px; }
+.team-member-row small { color: var(--muted); }
+@media (max-width: 1050px) { .team-create-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .team-create-grid .btn { grid-column: 1 / -1; } }
+@media (max-width: 700px) { .team-create-grid, .role-guide { grid-template-columns: 1fr; } .team-member-row { grid-template-columns: 38px 1fr; } .team-member-row select, .team-member-row .btn, .team-member-row .badge { grid-column: 2; } }
 .patient-record-section-head { display: flex; justify-content: space-between; gap: 14px; align-items: center; margin: 20px 0 10px; }
 .patient-record-section-head h3 { margin: 0; }
 .task-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
