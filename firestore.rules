@@ -37,6 +37,9 @@ service cloud.firestore {
     match /clinics/{clinicId}/appointments/{document=**} {
       allow read, write: if hasRole(clinicId, ['admin', 'reception', 'clinical']);
     }
+    match /clinics/{clinicId}/rooms/{document=**} {
+      allow read, write: if hasRole(clinicId, ['admin', 'reception', 'clinical']);
+    }
     match /clinics/{clinicId}/tasks/{document=**} {
       allow read, write: if hasRole(clinicId, ['admin', 'reception', 'clinical', 'accounting']);
     }

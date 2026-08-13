@@ -130,6 +130,9 @@
         <button class="nav-item" data-page="appointments">
           <span>▦</span> Citas
         </button>
+        <button class="nav-item" data-page="rooms">
+          <span>▥</span> Rooms
+        </button>
         <button class="nav-item" data-page="tasks">
           <span>✓</span> Tareas <b id="taskNavCount" class="nav-count hidden">0</b>
         </button>
@@ -338,6 +341,16 @@
         </div>
         <div id="appointmentAgenda" class="appointment-agenda"></div>
         <div class="waitlist-section"><div class="patient-record-section-head"><div><h3>Lista de espera</h3><small>Pacientes disponibles para ocupar cancelaciones</small></div><button class="btn light" id="waitlistCreateBtn">+ Agregar</button></div><div id="waitlistList" class="waitlist-list"></div></div>
+      </section>
+
+      <section class="page" id="rooms">
+        <div class="section-top">
+          <div><h2>Rooms y flujo clínico</h2><p>Ubica cada paciente, controla tiempos y prepara el iPad del consultorio.</p></div>
+          <button class="btn primary" id="roomCreateBtn">+ Crear room</button>
+        </div>
+        <div id="roomSummary" class="appointment-summary"></div>
+        <div class="room-toolbar"><span>Actualización en tiempo real</span><button class="btn light" id="roomRefreshBtn">Actualizar</button></div>
+        <div id="roomBoard" class="room-board"></div>
       </section>
 
       <section class="page patient-record-page" id="patientRecord">
@@ -724,6 +737,9 @@
         <label class="field-group">Doctor
           <input id="visitDoctor" type="text" placeholder="Ej. Dra. Ana Martínez" />
         </label>
+        <label class="field-group">Room
+          <select id="visitRoom"><option value="">Sin room asignado</option></select>
+        </label>
         <label class="field-group required"><span class="field-label">Estado <b>*</b></span>
           <select id="visitStatus" required>
             <option value="Programada">Programada</option>
@@ -806,6 +822,7 @@
         <label class="field-group">Duración<select id="appointmentDuration"><option value="15">15 minutos</option><option value="30" selected>30 minutos</option><option value="45">45 minutos</option><option value="60">60 minutos</option><option value="90">90 minutos</option></select></label>
         <label class="field-group">Modalidad<select id="appointmentType"><option>Presencial</option><option>Teleconsulta</option></select></label>
         <label class="field-group">Profesional<input id="appointmentDoctor" type="text" list="appointmentDoctorOptions" placeholder="Ej. Dra. Ana Martínez" autocomplete="off" /><datalist id="appointmentDoctorOptions"></datalist></label>
+        <label class="field-group">Room<select id="appointmentRoom"><option value="">Asignar después</option></select></label>
         <label class="field-group">Estado<select id="appointmentStatus"><option value="scheduled">Programada</option><option value="confirmed">Confirmada</option><option value="arrived">En espera</option><option value="completed">Atendida</option><option value="cancelled">Cancelada</option><option value="no_show">No asistió</option></select></label>
         <label class="field-group required full"><span class="field-label">Motivo <b>*</b></span><input id="appointmentReason" type="text" placeholder="Motivo principal de la cita" required /></label>
         <label class="field-group">Repetición<select id="appointmentRecurrence"><option value="none">No repetir</option><option value="weekly">Cada semana</option><option value="biweekly">Cada 2 semanas</option><option value="monthly">Cada mes</option></select></label><label class="field-group">Cantidad<input id="appointmentRecurrenceCount" type="number" min="2" max="24" value="4" /></label>
@@ -815,6 +832,47 @@
       <div class="modal-actions"><button type="button" class="btn light" data-close="appointmentDialog">Cancelar</button><button type="submit" class="btn primary">Guardar cita</button></div>
     </form>
   </dialog>
+
+  <dialog id="roomDialog">
+    <form id="roomForm" class="modal compact-modal" method="dialog">
+      <div class="modal-head"><div><small>Configuración</small><h3 id="roomDialogTitle">Nuevo room</h3></div><button type="button" class="close-btn" data-close="roomDialog">×</button></div>
+      <div class="modal-body"><input id="roomId" type="hidden" /><div class="form-grid">
+        <label class="field-group required"><span class="field-label">Nombre <b>*</b></span><input id="roomName" placeholder="Ej. Room 1" required /></label>
+        <label class="field-group">Tipo<select id="roomType"><option value="exam">Consulta</option><option value="procedure">Procedimiento</option><option value="lab">Laboratorio</option><option value="intake">Admisión</option><option value="other">Otro</option></select></label>
+        <label class="field-group full">Ubicación / notas<input id="roomLocation" placeholder="Ej. Pasillo norte" /></label>
+      </div></div>
+      <div class="modal-actions"><button type="button" class="btn light" data-close="roomDialog">Cancelar</button><button type="submit" class="btn primary">Guardar room</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="roomAssignDialog">
+    <form id="roomAssignForm" class="modal compact-modal" method="dialog">
+      <div class="modal-head"><div><small>Flujo clínico</small><h3 id="roomAssignTitle">Asignar room</h3></div><button type="button" class="close-btn" data-close="roomAssignDialog">×</button></div>
+      <div class="modal-body"><input id="roomAssignId" type="hidden" /><div class="form-grid">
+        <label class="field-group full">Paciente<select id="roomAssignPatient" required></select></label>
+        <label class="field-group">Cita<select id="roomAssignAppointment"><option value="">Sin cita vinculada</option></select></label>
+        <label class="field-group">Profesional<input id="roomAssignDoctor" placeholder="Profesional responsable" /></label>
+        <label class="field-group full">Estado<select id="roomAssignStatus"><option value="waiting">Paciente esperando</option><option value="nursing">Enfermería atendiendo</option><option value="ready">Listo para profesional</option><option value="in_visit">Consulta en curso</option></select></label>
+      </div></div>
+      <div class="modal-actions"><button type="button" class="btn light" data-close="roomAssignDialog">Cancelar</button><button type="submit" class="btn primary">Asignar paciente</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="ipadLaunchDialog">
+    <form id="ipadLaunchForm" class="modal compact-modal" method="dialog">
+      <div class="modal-head"><div><small>Tablet del consultorio</small><h3>Preparar modo paciente</h3></div><button type="button" class="close-btn" data-close="ipadLaunchDialog">×</button></div>
+      <div class="modal-body"><input id="ipadRoomId" type="hidden" /><div id="ipadLaunchContext" class="payment-context"></div><div class="form-grid">
+        <label class="field-group full">Formulario<select id="ipadFormResponse"><option value="">Pantalla de bienvenida solamente</option></select></label>
+        <label class="field-group required full"><span class="field-label">PIN de salida del personal <b>*</b></span><input id="ipadExitPin" type="password" inputmode="numeric" pattern="[0-9]{4,6}" minlength="4" maxlength="6" placeholder="4 a 6 números" required /></label>
+      </div><div class="security-note">El paciente no verá menús, otros expedientes ni información administrativa.</div></div>
+      <div class="modal-actions"><button type="button" class="btn light" data-close="ipadLaunchDialog">Cancelar</button><button type="submit" class="btn primary">Iniciar modo paciente</button></div>
+    </form>
+  </dialog>
+
+  <section id="patientKiosk" class="patient-kiosk hidden" aria-live="polite">
+    <header><div class="kiosk-brand"><span>✚</span><div><strong id="kioskClinicName">Clinic Control</strong><small id="kioskRoomName">Room</small></div></div><button id="kioskExitBtn" type="button">Salir para personal</button></header>
+    <main id="kioskContent"></main>
+  </section>
 
   <dialog id="paymentDialog">
     <form id="paymentForm" class="modal compact-modal" method="dialog">

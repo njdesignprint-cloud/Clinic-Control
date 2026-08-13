@@ -9,9 +9,9 @@ const duplicateIds = [...new Set(ids.filter((id, index) => ids.indexOf(id) !== i
 const referencedIds = [...app.matchAll(/\$\("#([A-Za-z][\w-]*)"\)/g)].map((match) => match[1]);
 const missingIds = [...new Set(referencedIds.filter((id) => !ids.includes(id)))];
 
-const requiredPages = ["dashboard", "patients", "crm", "appointments", "tasks", "visits", "billing", "invoices", "reports", "settings", "patientRecord"];
+const requiredPages = ["dashboard", "patients", "crm", "appointments", "rooms", "tasks", "visits", "billing", "invoices", "reports", "settings", "patientRecord"];
 const requiredDialogs = ["patientDialog", "appointmentDialog", "paymentDialog", "taskDialog", "signatureDialog", "formTemplateDialog", "patientFormDialog", "communicationDialog", "clinicalRecordDialog", "leadDialog", "campaignDialog", "waitlistDialog", "expenseDialog", "adjustmentDialog", "cashClosingDialog"];
-const requiredCollections = ["patients", "visits", "appointments", "payments", "documents", "tasks", "activities", "members", "formTemplates", "formResponses", "communications", "clinicalRecords", "leads", "campaigns", "waitlist", "expenses", "adjustments", "cashClosings"];
+const requiredCollections = ["patients", "visits", "appointments", "rooms", "payments", "documents", "tasks", "activities", "members", "formTemplates", "formResponses", "communications", "clinicalRecords", "leads", "campaigns", "waitlist", "expenses", "adjustments", "cashClosings"];
 const requiredFunctions = ["renderCrm", "renderAppointments", "renderAdvancedAccounting", "renderReports", "renderPatientRecord", "recordActivity", "resolveUserAccess", "savePatientDigitalForm", "saveClinicalRecord", "saveAdjustment", "saveCashClosing"];
 
 const missingPages = requiredPages.filter((id) => !ids.includes(id));

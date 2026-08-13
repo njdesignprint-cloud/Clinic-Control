@@ -1,4 +1,4 @@
-let state = { settings: {}, patients: [], visits: [], appointments: [], payments: [], documents: [], tasks: [], activities: [], teamMembers: [], formTemplates: [], formResponses: [], communications: [], clinicalRecords: [], leads: [], campaigns: [], waitlist: [], expenses: [], adjustments: [], cashClosings: [] };
+let state = { settings: {}, patients: [], visits: [], appointments: [], rooms: [], payments: [], documents: [], tasks: [], activities: [], teamMembers: [], formTemplates: [], formResponses: [], communications: [], clinicalRecords: [], leads: [], campaigns: [], waitlist: [], expenses: [], adjustments: [], cashClosings: [] };
 let firestore = null;
 let auth = null;
 let storage = null;
@@ -8,6 +8,7 @@ let unsubscribeSettings = null;
 let unsubscribePatients = null;
 let unsubscribeVisits = null;
 let unsubscribeAppointments = null;
+let unsubscribeRooms = null;
 let unsubscribePayments = null;
 let unsubscribeDocuments = null;
 let unsubscribeTasks = null;
@@ -36,6 +37,7 @@ let appointmentView = localStorage.getItem("clinicAppointmentView") || "day";
 let currentBillingRows = [];
 let activePatientFormResponseId = null;
 let activeWaitlistId = null;
+let activeKioskSession = (() => { try { return JSON.parse(sessionStorage.getItem("clinicKioskSession") || "null"); } catch { return null; } })();
 
 function uid() {
   if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
@@ -63,6 +65,7 @@ function buildSeedState() {
     patients: [],
     visits: [],
     appointments: [],
+    rooms: [],
     payments: [],
     documents: [],
     tasks: [],
@@ -103,6 +106,7 @@ function normalizeState(saved) {
     patients: Array.isArray(saved?.patients) ? saved.patients : seed.patients,
     visits: Array.isArray(saved?.visits) ? saved.visits : seed.visits,
     appointments: Array.isArray(saved?.appointments) ? saved.appointments : seed.appointments,
+    rooms: Array.isArray(saved?.rooms) ? saved.rooms : seed.rooms,
     payments: Array.isArray(saved?.payments) ? saved.payments : seed.payments,
     documents: Array.isArray(saved?.documents) ? saved.documents : seed.documents,
     tasks: Array.isArray(saved?.tasks) ? saved.tasks : seed.tasks,
@@ -196,6 +200,7 @@ function unsubscribeAll() {
   if (unsubscribePatients) unsubscribePatients();
   if (unsubscribeVisits) unsubscribeVisits();
   if (unsubscribeAppointments) unsubscribeAppointments();
+  if (unsubscribeRooms) unsubscribeRooms();
   if (unsubscribePayments) unsubscribePayments();
   if (unsubscribeDocuments) unsubscribeDocuments();
   if (unsubscribeTasks) unsubscribeTasks();
@@ -215,6 +220,7 @@ function unsubscribeAll() {
   unsubscribePatients = null;
   unsubscribeVisits = null;
   unsubscribeAppointments = null;
+  unsubscribeRooms = null;
   unsubscribePayments = null;
   unsubscribeDocuments = null;
   unsubscribeTasks = null;
@@ -244,7 +250,7 @@ function showAppScreen() {
 }
 
 function clearState() {
-  state = { settings: {}, patients: [], visits: [], appointments: [], payments: [], documents: [], tasks: [], activities: [], teamMembers: [], formTemplates: [], formResponses: [], communications: [], clinicalRecords: [], leads: [], campaigns: [], waitlist: [], expenses: [], adjustments: [], cashClosings: [] };
+  state = { settings: {}, patients: [], visits: [], appointments: [], rooms: [], payments: [], documents: [], tasks: [], activities: [], teamMembers: [], formTemplates: [], formResponses: [], communications: [], clinicalRecords: [], leads: [], campaigns: [], waitlist: [], expenses: [], adjustments: [], cashClosings: [] };
   render();
 }
 
@@ -255,6 +261,7 @@ function subscribeToRealtime() {
   const patientsRef = getCollectionRef("patients");
   const visitsRef = getCollectionRef("visits");
   const appointmentsRef = getCollectionRef("appointments");
+  const roomsRef = getCollectionRef("rooms");
   const paymentsRef = getCollectionRef("payments");
   const documentsRef = getCollectionRef("documents");
   const tasksRef = getCollectionRef("tasks");
@@ -292,6 +299,10 @@ function subscribeToRealtime() {
       state.appointments = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
       render();
     });
+  if (["admin", "reception", "clinical"].includes(currentAccess.role)) unsubscribeRooms = roomsRef.onSnapshot((snapshot) => {
+    state.rooms = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+    renderRooms(); renderRoomOptions();
+  });
   if (["admin", "accounting"].includes(currentAccess.role)) unsubscribePayments = paymentsRef.onSnapshot((snapshot) => {
       state.payments = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
       render();
@@ -324,6 +335,7 @@ function subscribeToRealtime() {
   if (["admin", "clinical", "reception"].includes(currentAccess.role)) unsubscribeFormResponses = formResponsesRef.onSnapshot((snapshot) => {
     state.formResponses = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
     if ($("#patientRecord")?.classList.contains("active") && activePatientRecordId) renderPatientRecord();
+    restorePatientKiosk();
   });
   unsubscribeCommunications = communicationsRef.orderBy("createdAt", "desc").limit(500).onSnapshot((snapshot) => {
     state.communications = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
@@ -349,9 +361,9 @@ function subscribeToRealtime() {
 
 const roleLabels = { admin: "Administrador", reception: "Recepción", clinical: "Profesional clínico", accounting: "Contabilidad" };
 const rolePages = {
-  admin: ["dashboard", "patients", "crm", "appointments", "tasks", "visits", "billing", "invoices", "reports", "settings", "patientRecord", "visitDialog"],
-  reception: ["dashboard", "patients", "crm", "appointments", "tasks", "patientRecord"],
-  clinical: ["dashboard", "patients", "appointments", "tasks", "visits", "patientRecord", "visitDialog"],
+  admin: ["dashboard", "patients", "crm", "appointments", "rooms", "tasks", "visits", "billing", "invoices", "reports", "settings", "patientRecord", "visitDialog"],
+  reception: ["dashboard", "patients", "crm", "appointments", "rooms", "tasks", "patientRecord"],
+  clinical: ["dashboard", "patients", "appointments", "rooms", "tasks", "visits", "patientRecord", "visitDialog"],
   accounting: ["dashboard", "patients", "tasks", "billing", "invoices", "reports", "patientRecord"]
 };
 const patientRecordTabsByRole = {
@@ -779,6 +791,7 @@ function showPage(pageId) {
     patients: "Pacientes",
     crm: "CRM y captación",
     appointments: "Citas",
+    rooms: "Rooms",
     tasks: "Tareas y seguimientos",
     visits: "Consultas",
     billing: "Pagos",
@@ -795,6 +808,8 @@ function render() {
   renderDashboard();
   renderPatients();
   renderAppointments();
+  renderRooms();
+  renderRoomOptions();
   renderVisitOptions();
   renderVisits();
   renderBilling();
@@ -1138,7 +1153,7 @@ function appointmentCardContent(item, compact = false) {
   if (compact) return `<button type="button" class="calendar-event status-${item.status}" onclick="event.stopPropagation(); editAppointment('${item.id}')" title="${escapeHtml(`${time} · ${p?.name || "Paciente"} · ${item.reason || "Cita"}`)}"><strong>${time} ${escapeHtml(p?.name || "Paciente")}</strong><span>${escapeHtml(item.reason || "Cita")} · ${item.duration || 30} min</span></button>`;
   return `<article class="appointment-card status-${item.status}">
     <div class="appointment-time"><strong>${time}</strong><span>${item.duration || 30} min</span></div>
-    <div class="appointment-main"><div><h3>${escapeHtml(p?.name || "Paciente eliminado")}</h3><p>${escapeHtml(item.reason || "Sin motivo")}</p></div><span class="badge ${status.color}">${status.label}</span><div class="appointment-meta"><span>${escapeHtml(item.type || "Presencial")}</span><span>${escapeHtml(item.doctor || "Sin profesional")}</span><span>${escapeHtml(p?.phone || "Sin teléfono")}</span></div></div>
+    <div class="appointment-main"><div><h3>${escapeHtml(p?.name || "Paciente eliminado")}</h3><p>${escapeHtml(item.reason || "Sin motivo")}</p></div><span class="badge ${status.color}">${status.label}</span><div class="appointment-meta"><span>${escapeHtml(item.type || "Presencial")}</span><span>${escapeHtml(item.doctor || "Sin profesional")}</span><span>${escapeHtml(item.roomName || roomById(item.roomId)?.name || "Room sin asignar")}</span><span>${escapeHtml(p?.phone || "Sin teléfono")}</span></div></div>
     <div class="appointment-actions">
       ${item.status === "scheduled" ? `<button class="btn light" onclick="setAppointmentStatus('${item.id}','confirmed')">Confirmar</button>` : ""}
       ${["scheduled", "confirmed"].includes(item.status) ? `<button class="btn light" onclick="setAppointmentStatus('${item.id}','arrived')">Llegó</button>` : ""}
@@ -1192,6 +1207,93 @@ function renderAppointments() {
   else if (appointmentView === "week") agenda.innerHTML = renderWeekCalendar(filteredRows, dateValue);
   else agenda.innerHTML = dayRows.length ? dayRows.map((item) => appointmentCardContent(item)).join("") : `<div class="empty agenda-empty"><strong>Agenda libre</strong><span>No hay citas para esta fecha y filtros.</span><button class="btn primary" onclick="openAppointmentDialog()">Crear una cita</button></div>`;
 }
+
+const roomStatuses = {
+  available: { label: "Disponible", color: "green" },
+  preparing: { label: "Preparándose", color: "blue" },
+  waiting: { label: "Paciente esperando", color: "orange" },
+  nursing: { label: "Enfermería atendiendo", color: "blue" },
+  ready: { label: "Listo para profesional", color: "green" },
+  in_visit: { label: "Consulta en curso", color: "purple" },
+  cleaning: { label: "Requiere limpieza", color: "red" },
+  out_of_service: { label: "Fuera de servicio", color: "gray" }
+};
+
+function roomStatus(value) { return roomStatuses[value] || roomStatuses.available; }
+function roomById(id) { return state.rooms.find((room) => room.id === id); }
+function roomElapsed(room) {
+  if (!room.statusChangedAt || ["available", "out_of_service"].includes(room.status)) return "—";
+  const minutes = Math.max(0, Math.floor((Date.now() - new Date(room.statusChangedAt).getTime()) / 60000));
+  return minutes < 60 ? `${minutes} min` : `${Math.floor(minutes / 60)} h ${minutes % 60} min`;
+}
+
+function renderRoomOptions() {
+  const options = `<option value="">Sin room asignado</option>${state.rooms.filter((room) => room.status !== "out_of_service").sort((a, b) => a.name.localeCompare(b.name)).map((room) => `<option value="${room.id}">${escapeHtml(room.name)} · ${roomStatus(room.status).label}</option>`).join("")}`;
+  ["appointmentRoom", "visitRoom"].forEach((id) => { const select = document.getElementById(id); if (!select) return; const selected = select.value; select.innerHTML = options; if ([...select.options].some((option) => option.value === selected)) select.value = selected; });
+}
+
+function renderRooms() {
+  const board = $("#roomBoard"); if (!board) return;
+  const occupied = state.rooms.filter((room) => room.patientId && !["available", "cleaning", "out_of_service"].includes(room.status)).length;
+  $("#roomSummary").innerHTML = `<div><strong>${state.rooms.length}</strong><span>Total rooms</span></div><div><strong>${state.rooms.filter((room) => room.status === "available").length}</strong><span>Disponibles</span></div><div><strong>${occupied}</strong><span>Con pacientes</span></div><div><strong>${state.rooms.filter((room) => room.status === "cleaning").length}</strong><span>Por limpiar</span></div>`;
+  board.innerHTML = state.rooms.length ? [...state.rooms].sort((a, b) => a.name.localeCompare(b.name)).map((room) => {
+    const status = roomStatus(room.status); const p = patient(room.patientId); const appointment = state.appointments.find((item) => item.id === room.appointmentId);
+    return `<article class="room-card room-${room.status || "available"}"><header><div><small>${escapeHtml(room.type === "lab" ? "Laboratorio" : room.type === "procedure" ? "Procedimiento" : "Consultorio")}</small><h3>${escapeHtml(room.name)}</h3></div><span class="badge ${status.color}">${status.label}</span></header><div class="room-patient">${p ? `<strong>${escapeHtml(p.name)}</strong><span>${escapeHtml(appointment?.reason || room.notes || "Paciente asignado")}</span><small>${escapeHtml(room.doctor || appointment?.doctor || "Sin profesional")} · ${roomElapsed(room)}</small>` : `<strong>Sin paciente</strong><span>${escapeHtml(room.location || "Listo para asignar")}</span>`}</div><div class="room-actions">${room.status === "available" ? `<button class="btn primary" onclick="openRoomAssignDialog('${room.id}')">Asignar paciente</button>` : ""}${p ? `<button class="btn light" onclick="advanceRoomStatus('${room.id}')">Siguiente estado</button><button class="btn light" onclick="openIpadLaunch('${room.id}')">Usar iPad</button>` : ""}${room.status === "cleaning" ? `<button class="btn primary" onclick="releaseRoom('${room.id}')">Marcar limpio</button>` : ""}<button class="icon-btn" onclick="openRoomDialog('${room.id}')" title="Editar room">✎</button></div></article>`;
+  }).join("") : `<div class="empty room-empty"><strong>Configura tus consultorios</strong><span>Crea Room 1, Room 2, laboratorio u otras áreas clínicas.</span><button class="btn primary" onclick="openRoomDialog()">Crear primer room</button></div>`;
+}
+
+function openRoomDialog(id = "") {
+  const room = roomById(id); $("#roomDialogTitle").textContent = room ? "Editar room" : "Nuevo room"; $("#roomId").value = room?.id || ""; $("#roomName").value = room?.name || ""; $("#roomType").value = room?.type || "exam"; $("#roomLocation").value = room?.location || ""; $("#roomDialog").showModal();
+}
+
+async function saveRoomFromDialog() {
+  const id = $("#roomId").value || uid(); const existing = roomById(id); const name = $("#roomName").value.trim(); if (!name) return toast("Escribe el nombre del room.");
+  const data = { id, name, type: $("#roomType").value, location: $("#roomLocation").value.trim(), status: existing?.status || "available", patientId: existing?.patientId || "", appointmentId: existing?.appointmentId || "", doctor: existing?.doctor || "", statusChangedAt: existing?.statusChangedAt || new Date().toISOString(), createdAt: existing?.createdAt || new Date().toISOString(), updatedAt: new Date().toISOString() };
+  await getCollectionRef("rooms").doc(id).set(data, { merge: true }); recordActivity({ action: existing ? "updated" : "created", entityType: "room", entityId: id, title: existing ? "Room actualizado" : "Room creado", detail: name }).catch(console.error); $("#roomDialog").close(); toast("Room guardado.");
+}
+
+function openRoomAssignDialog(id) {
+  const room = roomById(id); if (!room) return; $("#roomAssignId").value = id; $("#roomAssignTitle").textContent = `Asignar ${room.name}`; $("#roomAssignPatient").innerHTML = state.patients.map((p) => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join(""); $("#roomAssignPatient").value = room.patientId || state.patients[0]?.id || ""; $("#roomAssignDoctor").value = room.doctor || ""; $("#roomAssignStatus").value = room.status && !["available", "cleaning"].includes(room.status) ? room.status : "waiting"; renderRoomAppointmentChoices(); $("#roomAssignDialog").showModal();
+}
+
+function renderRoomAppointmentChoices() {
+  const patientId = $("#roomAssignPatient").value; const rows = state.appointments.filter((item) => item.patientId === patientId && !["completed", "cancelled", "no_show"].includes(item.status)).sort((a, b) => new Date(a.date) - new Date(b.date)); $("#roomAssignAppointment").innerHTML = `<option value="">Sin cita vinculada</option>${rows.map((item) => `<option value="${item.id}">${fmtDate(item.date)} · ${escapeHtml(item.reason)}</option>`).join("")}`;
+}
+
+async function assignRoomFromDialog() {
+  const room = roomById($("#roomAssignId").value); if (!room) return; const patientId = $("#roomAssignPatient").value; const appointmentId = $("#roomAssignAppointment").value; const status = $("#roomAssignStatus").value; const doctor = $("#roomAssignDoctor").value.trim();
+  const data = { ...room, patientId, appointmentId, doctor, status, statusChangedAt: new Date().toISOString(), updatedAt: new Date().toISOString() }; await getCollectionRef("rooms").doc(room.id).set(data, { merge: true });
+  if (appointmentId) await getCollectionRef("appointments").doc(appointmentId).set({ roomId: room.id, roomName: room.name, status: status === "waiting" ? "arrived" : "confirmed", updatedAt: new Date().toISOString() }, { merge: true });
+  recordActivity({ action: "assigned", entityType: "room", entityId: room.id, patientId, title: "Paciente asignado a room", detail: `${room.name} · ${roomStatus(status).label}` }).catch(console.error); $("#roomAssignDialog").close(); toast(`Paciente asignado a ${room.name}.`);
+}
+
+async function updateRoomStatus(id, status) { const room = roomById(id); if (!room) return; await getCollectionRef("rooms").doc(id).set({ status, statusChangedAt: new Date().toISOString(), updatedAt: new Date().toISOString() }, { merge: true }); recordActivity({ action: "status", entityType: "room", entityId: id, patientId: room.patientId || "", title: `Room: ${roomStatus(status).label}`, detail: room.name }).catch(console.error); }
+function advanceRoomStatus(id) { const room = roomById(id); if (!room) return; const next = { waiting: "nursing", nursing: "ready", ready: "in_visit", in_visit: "cleaning", preparing: "available" }[room.status] || "cleaning"; updateRoomStatus(id, next).catch((error) => { console.error(error); toast("No se pudo cambiar el estado."); }); }
+async function releaseRoom(id) { const room = roomById(id); if (!room) return; await getCollectionRef("rooms").doc(id).set({ status: "available", patientId: "", appointmentId: "", doctor: "", statusChangedAt: new Date().toISOString(), updatedAt: new Date().toISOString() }, { merge: true }); toast(`${room.name} está disponible.`); }
+
+function openIpadLaunch(id) {
+  const room = roomById(id); const p = patient(room?.patientId); if (!room || !p) return toast("Asigna primero un paciente al room."); const forms = state.formResponses.filter((item) => item.patientId === p.id && item.status !== "completed"); $("#ipadRoomId").value = id; $("#ipadLaunchContext").innerHTML = `<div><small>Room</small><strong>${escapeHtml(room.name)}</strong></div><div><small>Paciente</small><strong>${escapeHtml(p.name)}</strong></div>`; $("#ipadFormResponse").innerHTML = `<option value="">Pantalla de bienvenida solamente</option>${forms.map((form) => `<option value="${form.id}">${escapeHtml(form.templateName)}</option>`).join("")}`; $("#ipadExitPin").value = ""; $("#ipadLaunchDialog").showModal();
+}
+
+function startPatientKiosk() {
+  const room = roomById($("#ipadRoomId").value); const p = patient(room?.patientId); const pin = $("#ipadExitPin").value; if (!room || !p || !/^\d{4,6}$/.test(pin)) return toast("Configura un PIN de 4 a 6 números."); const responseId = $("#ipadFormResponse").value; const response = state.formResponses.find((item) => item.id === responseId); activeKioskSession = { roomId: room.id, patientId: p.id, responseId, pin, startedAt: Date.now() }; sessionStorage.setItem("clinicKioskSession", JSON.stringify(activeKioskSession)); $("#ipadLaunchDialog").close(); document.body.classList.add("kiosk-active"); $("#patientKiosk").classList.remove("hidden"); $("#kioskClinicName").textContent = state.settings.clinicName || "Clinic Control"; $("#kioskRoomName").textContent = room.name; renderKioskContent(response, p); if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen().catch(() => {}); updateRoomStatus(room.id, room.status === "waiting" ? "nursing" : room.status).catch(console.error);
+}
+
+function renderKioskContent(response, p) {
+  $("#kioskContent").innerHTML = response ? `<form id="kioskForm" class="kiosk-form"><div class="kiosk-welcome"><small>Hola</small><h1>${escapeHtml(p.name.split(" ")[0])}</h1><p>${escapeHtml(response.description || "Contesta las siguientes preguntas. Tu información se guardará directamente en tu expediente.")}</p></div><div class="kiosk-questions">${(response.questions || []).map((q, i) => digitalQuestionHtml(q, response.answers?.[q.id] || "", i)).join("")}</div><button class="kiosk-submit" type="submit">Enviar respuestas</button></form>` : `<div class="kiosk-done"><span>✓</span><h1>Bienvenido, ${escapeHtml(p.name.split(" ")[0])}</h1><p>El personal clínico te atenderá en breve. Puedes entregar el iPad cuando termines.</p></div>`;
+  document.getElementById("kioskForm")?.addEventListener("submit", saveKioskForm);
+}
+
+function restorePatientKiosk() {
+  if (!activeKioskSession) return; const room = roomById(activeKioskSession.roomId); const p = patient(activeKioskSession.patientId); if (!room || !p) return;
+  document.body.classList.add("kiosk-active"); $("#patientKiosk").classList.remove("hidden"); $("#kioskClinicName").textContent = state.settings.clinicName || "Clinic Control"; $("#kioskRoomName").textContent = room.name; renderKioskContent(state.formResponses.find((item) => item.id === activeKioskSession.responseId), p);
+}
+
+async function saveKioskForm(event) {
+  event.preventDefault(); const response = state.formResponses.find((item) => item.id === activeKioskSession?.responseId); if (!response) return; const answers = Object.fromEntries(Array.from($$("#kioskContent [data-answer-id]")).map((input) => [input.dataset.answerId, input.value.trim()])); const missing = (response.questions || []).find((q) => q.required && !answers[q.id]); if (missing) return toast(`Completa: ${missing.label}`); await getCollectionRef("formResponses").doc(response.id).set({ answers, status: "completed", updatedAt: new Date().toISOString(), completedAt: new Date().toISOString(), completedBy: "patient-kiosk", roomId: activeKioskSession.roomId }, { merge: true }); recordActivity({ action: "completed", entityType: "form", entityId: response.id, patientId: response.patientId, title: "Formulario completado en iPad", detail: `${response.templateName} · ${roomById(activeKioskSession.roomId)?.name || "Room"}` }).catch(console.error); $("#kioskContent").innerHTML = `<div class="kiosk-done"><span>✓</span><h1>¡Gracias!</h1><p>Tus respuestas se guardaron correctamente. Entrega el iPad al personal.</p></div>`;
+}
+
+function exitPatientKiosk() { if (!activeKioskSession) return; const value = prompt("PIN del personal para salir del modo paciente:"); if (value !== activeKioskSession.pin) return toast("PIN incorrecto."); activeKioskSession = null; sessionStorage.removeItem("clinicKioskSession"); document.body.classList.remove("kiosk-active"); $("#patientKiosk").classList.add("hidden"); if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); showPage("rooms"); }
 
 function renderVisits() {
   const query = ($("#visitSearch")?.value || "").toLowerCase().trim();
@@ -2169,6 +2271,8 @@ function openAppointmentDialog(item = null) {
   $("#appointmentDuration").value = String(item?.duration || 30);
   $("#appointmentType").value = item?.type || "Presencial";
   $("#appointmentDoctor").value = item?.doctor || "";
+  renderRoomOptions();
+  $("#appointmentRoom").value = item?.roomId || "";
   $("#appointmentStatus").value = item?.status || "scheduled";
   $("#appointmentReason").value = item?.reason || "";
   $("#appointmentReminder").checked = item ? Boolean(item.reminderEnabled) : true;
@@ -2229,7 +2333,8 @@ function findAppointmentConflict(candidate) {
     if (!overlaps) return false;
     const samePatient = item.patientId === candidate.patientId;
     const sameDoctor = candidate.doctor && item.doctor && candidate.doctor.toLowerCase() === item.doctor.toLowerCase();
-    return samePatient || sameDoctor;
+    const sameRoom = candidate.roomId && item.roomId && candidate.roomId === item.roomId;
+    return samePatient || sameDoctor || sameRoom;
   });
 }
 
@@ -2285,7 +2390,7 @@ async function startAppointmentVisit(id) {
   if (!item) return;
   await setAppointmentStatus(id, "arrived");
   showPage("visits");
-  openVisitDialog({ patientId: item.patientId, date: item.date, type: item.type, doctor: item.doctor, reason: item.reason, notes: item.notes, status: "Completada", appointmentId: item.id });
+  openVisitDialog({ patientId: item.patientId, date: item.date, type: item.type, doctor: item.doctor, roomId: item.roomId || "", roomName: item.roomName || "", reason: item.reason, notes: item.notes, status: "Completada", appointmentId: item.id });
 }
 
 function openPaymentDialog(visitId = "", patientId = "") {
@@ -2376,6 +2481,8 @@ function openVisitDialog(visit = null) {
   $("#visitType").value = visit?.type || "Presencial";
   $("#visitDate").value = visit?.date || new Date().toISOString().slice(0, 16);
   $("#visitDoctor").value = visit?.doctor || "";
+  renderRoomOptions();
+  $("#visitRoom").value = visit?.roomId || "";
   $("#visitStatus").value = visit?.status || (visit?.id ? "Completada" : "Programada");
   $("#visitReminderEnabled").checked = visit?.id ? Boolean(visit.reminderEnabled) : false;
   renderVisitLineItems(visitItems(visit));
@@ -2642,6 +2749,7 @@ window.openClinicalRecordDialog = openClinicalRecordDialog;
 window.openLeadDialog = openLeadDialog; window.moveLead = moveLead; window.convertLead = convertLead; window.openCampaignDialog = openCampaignDialog;
 window.bookWaitlist = bookWaitlist; window.removeWaitlist = removeWaitlist;
 window.openAdjustmentDialog = openAdjustmentDialog; window.deleteExpense = deleteExpense;
+window.openRoomDialog = openRoomDialog; window.openRoomAssignDialog = openRoomAssignDialog; window.advanceRoomStatus = advanceRoomStatus; window.releaseRoom = releaseRoom; window.openIpadLaunch = openIpadLaunch;
 
 // El expediente de consulta vive dentro del área principal, no como ventana emergente.
 $(".main").appendChild($("#visitDialog"));
@@ -2668,6 +2776,13 @@ $("#quickPatientBtn").addEventListener("click", () => openPatientDialog());
 $("#dashNewPatient").addEventListener("click", () => openPatientDialog());
 $("#patientCreateBtn").addEventListener("click", () => openPatientDialog());
 $("#appointmentCreateBtn").addEventListener("click", () => openAppointmentDialog());
+$("#roomCreateBtn").addEventListener("click", () => openRoomDialog());
+$("#roomRefreshBtn").addEventListener("click", renderRooms);
+$("#roomAssignPatient").addEventListener("change", renderRoomAppointmentChoices);
+$("#roomForm").addEventListener("submit", async (event) => { event.preventDefault(); try { await saveRoomFromDialog(); } catch (error) { console.error(error); toast("No se pudo guardar el room."); } });
+$("#roomAssignForm").addEventListener("submit", async (event) => { event.preventDefault(); try { await assignRoomFromDialog(); } catch (error) { console.error(error); toast("No se pudo asignar el room."); } });
+$("#ipadLaunchForm").addEventListener("submit", (event) => { event.preventDefault(); startPatientKiosk(); });
+$("#kioskExitBtn").addEventListener("click", exitPatientKiosk);
 $("#waitlistCreateBtn").addEventListener("click", openWaitlistDialog);
 $("#taskCreateBtn").addEventListener("click", () => openTaskDialog());
 $("#taskSearch").addEventListener("input", renderTasks); $("#taskStatusFilter").addEventListener("change", renderTasks); $("#taskTypeFilter").addEventListener("change", renderTasks);
@@ -2780,6 +2895,8 @@ $("#appointmentForm").addEventListener("submit", async (event) => {
     duration: Number($("#appointmentDuration").value || 30),
     type: $("#appointmentType").value,
     doctor: $("#appointmentDoctor").value.trim(),
+    roomId: $("#appointmentRoom").value,
+    roomName: roomById($("#appointmentRoom").value)?.name || "",
     status: $("#appointmentStatus").value,
     reason: $("#appointmentReason").value.trim(),
     reminderEnabled: $("#appointmentReminder").checked,
@@ -2883,6 +3000,8 @@ $("#visitForm").addEventListener("submit", async (event) => {
     type: $("#visitType").value,
     date: $("#visitDate").value,
     doctor: $("#visitDoctor").value.trim(),
+    roomId: $("#visitRoom").value,
+    roomName: roomById($("#visitRoom").value)?.name || "",
     status: $("#visitStatus").value,
     reminderEnabled: $("#visitReminderEnabled").checked,
     reason: $("#visitReason").value.trim(),
@@ -2911,6 +3030,7 @@ $("#visitForm").addEventListener("submit", async (event) => {
       const appointment = state.appointments.find((item) => item.id === data.appointmentId);
       if (appointment) await saveAppointment({ ...appointment, status: "completed", visitId: data.id, updatedAt: new Date().toISOString() });
     }
+    if (data.roomId) await updateRoomStatus(data.roomId, "cleaning");
     pendingAppointmentId = null;
     showPage("visits");
     render();

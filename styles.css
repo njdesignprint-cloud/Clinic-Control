@@ -16,6 +16,53 @@
   --radius: 18px;
 }
 
+/* Rooms y modo paciente para iPad */
+.room-toolbar { display:flex; justify-content:space-between; align-items:center; margin:16px 0; color:var(--muted); }
+.room-board { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px; }
+.room-card { overflow:hidden; border:1px solid var(--line); border-top:5px solid #94a3b8; border-radius:18px; background:#fff; box-shadow:var(--shadow); }
+.room-card.room-available { border-top-color:#10b981; }
+.room-card.room-waiting { border-top-color:#f59e0b; }
+.room-card.room-nursing,.room-card.room-preparing { border-top-color:#3b82f6; }
+.room-card.room-ready { border-top-color:#14b8a6; }
+.room-card.room-in_visit { border-top-color:#8b5cf6; }
+.room-card.room-cleaning { border-top-color:#ef4444; }
+.room-card header { display:flex; justify-content:space-between; gap:12px; align-items:flex-start; padding:18px 18px 12px; }
+.room-card header h3 { margin:3px 0 0; font-size:22px; }
+.room-card header small,.room-patient span,.room-patient small { color:var(--muted); }
+.room-patient { display:grid; min-height:96px; gap:5px; padding:4px 18px 18px; }
+.room-patient strong { font-size:17px; }
+.room-actions { display:flex; flex-wrap:wrap; gap:8px; padding:14px 18px; border-top:1px solid var(--line); background:#f8fafc; }
+.room-actions .btn { flex:1; white-space:nowrap; }
+.room-empty { grid-column:1/-1; display:grid; justify-items:center; gap:8px; padding:60px 20px; }
+.security-note { margin-top:18px; padding:14px; border-radius:12px; color:#075985; background:#e0f2fe; font-weight:700; }
+.patient-kiosk { position:fixed; inset:0; z-index:10000; overflow:auto; color:#10212b; background:linear-gradient(145deg,#ecfeff,#f8fafc 55%,#dff7f2); }
+.patient-kiosk.hidden { display:none; }
+.patient-kiosk > header { position:sticky; top:0; z-index:2; display:flex; justify-content:space-between; align-items:center; padding:20px 32px; border-bottom:1px solid rgba(15,118,110,.18); background:rgba(255,255,255,.94); backdrop-filter:blur(12px); }
+.kiosk-brand { display:flex; align-items:center; gap:14px; }
+.kiosk-brand > span { display:grid; place-items:center; width:48px; height:48px; border-radius:15px; color:white; background:linear-gradient(135deg,#0f766e,#0891b2); font-size:24px; }
+.kiosk-brand div { display:grid; }
+.kiosk-brand strong { font-size:20px; }
+.kiosk-brand small { color:var(--muted); }
+#kioskExitBtn { border:0; color:#64748b; background:transparent; font-weight:800; cursor:pointer; }
+.patient-kiosk > main { width:min(900px,calc(100% - 40px)); margin:0 auto; padding:48px 0 80px; }
+.kiosk-welcome { margin-bottom:30px; text-align:center; }
+.kiosk-welcome small { color:var(--primary); font-size:16px; font-weight:900; text-transform:uppercase; letter-spacing:.1em; }
+.kiosk-welcome h1 { margin:6px 0 12px; font-size:46px; }
+.kiosk-welcome p { max-width:700px; margin:auto; color:var(--muted); font-size:20px; line-height:1.5; }
+.kiosk-form { padding:30px; border:1px solid rgba(15,118,110,.16); border-radius:28px; background:white; box-shadow:0 24px 70px rgba(15,23,42,.12); }
+.kiosk-questions { display:grid; gap:22px; }
+.kiosk-questions .digital-question span { font-size:20px; }
+.kiosk-questions input,.kiosk-questions select,.kiosk-questions textarea { min-height:58px; padding:14px 16px; font-size:20px; border-radius:14px; }
+.kiosk-submit { width:100%; margin-top:30px; padding:18px; border:0; border-radius:16px; color:white; background:linear-gradient(135deg,#0f766e,#0891b2); font-size:21px; font-weight:900; cursor:pointer; }
+.kiosk-done { display:grid; justify-items:center; gap:16px; padding:100px 30px; text-align:center; }
+.kiosk-done span { display:grid; place-items:center; width:96px; height:96px; border-radius:50%; color:white; background:#10b981; font-size:50px; }
+.kiosk-done h1 { margin:8px 0 0; font-size:48px; }
+.kiosk-done p { max-width:650px; margin:0; color:var(--muted); font-size:22px; line-height:1.5; }
+body.kiosk-active > :not(.patient-kiosk):not(#toast) { visibility:hidden !important; }
+body.kiosk-active { overflow:hidden; }
+@media (max-width:1100px) { .room-board { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+@media (max-width:720px) { .room-board { grid-template-columns:1fr; } .patient-kiosk > header { padding:14px 18px; } .patient-kiosk > main { width:calc(100% - 24px); padding:24px 0 50px; } .kiosk-form { padding:20px; } .kiosk-welcome h1,.kiosk-done h1 { font-size:36px; } }
+
 * {
   box-sizing: border-box;
 }
