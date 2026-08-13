@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no" />
+  <meta name="theme-color" content="#0f766e" />
+  <meta name="referrer" content="no-referrer" />
+  <title>Portal de Room</title>
+  <link rel="stylesheet" href="patient.css" />
+</head>
+<body>
+  <header><div class="brand"><span>✚</span><div><strong id="clinicName">Portal de Room</strong><small id="roomName">Acceso seguro para pacientes</small></div></div><button id="lockBtn" type="button" class="hidden">Bloquear</button></header>
+  <main>
+    <section id="activation" class="card activation">
+      <span class="shield">✓</span><h1>Bienvenido</h1><p>Solicita al personal el código temporal de esta Room.</p>
+      <form id="activationForm"><label>Código de acceso<input id="accessCode" inputmode="text" autocomplete="off" autocapitalize="characters" maxlength="12" placeholder="AB12CD34" required /></label><button type="submit">Abrir actividades</button></form>
+      <small>Este iPad no tiene acceso al sistema administrativo.</small>
+    </section>
+    <section id="workspace" class="hidden"><div id="progress" class="progress"><span id="progressText"></span><i><b id="progressBar"></b></i></div><div id="content" class="card"></div></section>
+  </main>
+  <div id="notice" role="status"></div>
+  <script src="patient.js"></script>
+</body>
+</html>

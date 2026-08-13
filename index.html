@@ -866,10 +866,17 @@
         <div class="form-grid full"><label class="field-group">Idioma<select id="ipadLanguage"><option value="es">Español</option><option value="en">English</option></select></label><label class="field-group">Pantalla final<select id="ipadCompletionAction"><option value="ready">Avisar que está listo</option><option value="waiting">Seguir esperando</option></select></label></div>
         <label class="field-group full">Pregunta rápida del profesional<textarea id="ipadQuickQuestion" rows="2" placeholder="Ej. ¿Qué cambió desde su última visita?"></textarea></label>
         <button id="ipadCreateTemplateBtn" class="btn light full" type="button">+ Crear otro formulario</button>
-        <label class="field-group required full"><span class="field-label">PIN de salida del personal <b>*</b></span><input id="ipadExitPin" type="password" inputmode="numeric" pattern="[0-9]{4,6}" minlength="4" maxlength="6" placeholder="4 a 6 números" required /></label>
-      </div><div class="security-note">El paciente no verá menús, otros expedientes ni información administrativa.</div></div>
-      <div class="modal-actions"><button type="button" class="btn light" data-close="ipadLaunchDialog">Cancelar</button><button type="submit" class="btn primary">Iniciar modo paciente</button></div>
+      </div><div class="security-note">Se generará un código temporal. El iPad no abrirá este sistema administrativo.</div></div>
+      <div class="modal-actions"><button type="button" class="btn light" data-close="ipadLaunchDialog">Cancelar</button><button type="submit" class="btn primary">Generar acceso seguro</button></div>
     </form>
+  </dialog>
+
+  <dialog id="patientPortalDialog">
+    <div class="modal compact-modal">
+      <div class="modal-head"><div><small>Portal seguro del iPad</small><h3>Acceso temporal creado</h3></div><button type="button" class="close-btn" data-close="patientPortalDialog">×</button></div>
+      <div class="modal-body portal-handoff"><div class="portal-code-label">Código de esta Room</div><strong id="patientPortalCode" class="portal-code">—</strong><p>En el iPad abre el Portal de Room e introduce este código. Caduca en 30 minutos y deja de funcionar al terminar.</p><input id="patientPortalUrl" type="text" readonly /><div class="portal-handoff-actions"><button id="copyPatientPortalBtn" class="btn light" type="button">Copiar enlace</button><button id="openPatientPortalBtn" class="btn primary" type="button">Abrir portal</button></div><div class="security-note">El iPad no recibe una sesión administrativa ni acceso a otros pacientes.</div></div>
+      <div class="modal-actions"><button class="btn primary" type="button" data-close="patientPortalDialog">Listo</button></div>
+    </div>
   </dialog>
 
   <section id="patientKiosk" class="patient-kiosk hidden" aria-live="polite">

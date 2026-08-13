@@ -35,6 +35,12 @@
 .room-actions .btn { flex:1; white-space:nowrap; }
 .room-empty { grid-column:1/-1; display:grid; justify-items:center; gap:8px; padding:60px 20px; }
 .security-note { margin-top:18px; padding:14px; border-radius:12px; color:#075985; background:#e0f2fe; font-weight:700; }
+.portal-handoff { text-align:center; }
+.portal-code-label { color:var(--muted); font-size:12px; font-weight:900; letter-spacing:.08em; text-transform:uppercase; }
+.portal-code { display:block; margin:10px 0; color:var(--primary); font-size:42px; letter-spacing:.15em; }
+.portal-handoff p { color:var(--muted); line-height:1.55; }
+.portal-handoff input { text-align:center; }
+.portal-handoff-actions { display:flex; gap:10px; justify-content:center; margin-top:14px; }
 .ipad-activity-list { display:grid; gap:14px; max-height:360px; overflow:auto; padding:4px; }
 .ipad-activity-group { display:grid; gap:8px; }
 .ipad-activity-group > strong { color:var(--muted); font-size:12px; letter-spacing:.06em; text-transform:uppercase; }

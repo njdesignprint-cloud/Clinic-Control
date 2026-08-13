@@ -1279,7 +1279,7 @@ function openIpadLaunch(id) {
   $("#ipadRoomId").value = id; $("#ipadLaunchContext").innerHTML = `<div><small>Room</small><strong>${escapeHtml(room.name)}</strong></div><div><small>Paciente</small><strong>${escapeHtml(p.name)}</strong></div>`;
   $("#ipadActivityList").innerHTML = `${pending.length ? `<div class="ipad-activity-group"><strong>Pendientes del paciente</strong>${pending.map((form) => ipadActivityChoice("response", form.id, "☷", form.templateName, "Continuar formulario pendiente", true)).join("")}</div>` : ""}<div class="ipad-activity-group"><strong>Biblioteca de formularios</strong>${state.formTemplates.length ? state.formTemplates.map((template) => ipadActivityChoice("template", template.id, "＋", template.name, `${(template.questions || []).length} pregunta(s)`, false)).join("") : `<small>No hay plantillas digitales.</small>`}</div>${documents.length ? `<div class="ipad-activity-group"><strong>Documentos para firma</strong>${documents.map((doc) => ipadActivityChoice("document", `${doc.visitId}|${doc.documentId}`, "✍", doc.name, "Firma pendiente", true)).join("")}</div>` : ""}`;
   $("#ipadCreateTemplateBtn").classList.toggle("hidden", currentAccess.role !== "admin");
-  $("#ipadLanguage").value = p.language === "English" ? "en" : "es"; $("#ipadCompletionAction").value = "ready"; $("#ipadQuickQuestion").value = ""; $("#ipadExitPin").value = ""; $("#ipadLaunchDialog").showModal();
+  $("#ipadLanguage").value = p.language === "English" ? "en" : "es"; $("#ipadCompletionAction").value = "ready"; $("#ipadQuickQuestion").value = ""; $("#ipadLaunchDialog").showModal();
 }
 
 function ipadActivityChoice(kind, id, icon, title, detail, checked) { return `<label class="ipad-activity-choice"><input type="checkbox" data-ipad-kind="${kind}" data-ipad-id="${escapeHtml(id)}" ${checked ? "checked" : ""}/><span>${icon}</span><div><strong>${escapeHtml(title)}</strong><small>${escapeHtml(detail)}</small></div></label>`; }
@@ -1291,7 +1291,7 @@ async function createKioskResponse(template, patientId, roomId, quickQuestion = 
 }
 
 async function startPatientKiosk() {
-  const room = roomById($("#ipadRoomId").value); const p = patient(room?.patientId); const pin = $("#ipadExitPin").value; if (!room || !p || !/^\d{4,6}$/.test(pin)) return toast("Configura un PIN de 4 a 6 números.");
+  const room = roomById($("#ipadRoomId").value); const p = patient(room?.patientId); if (!room || !p) return toast("Asigna primero un paciente al room.");
   const selected = Array.from($$("#ipadActivityList [data-ipad-kind]:checked")); const activities = [];
   for (const input of selected) {
     if (input.dataset.ipadKind === "response") activities.push({ type: "form", responseId: input.dataset.ipadId });
@@ -1299,7 +1299,8 @@ async function startPatientKiosk() {
     if (input.dataset.ipadKind === "document") { const [visitId, documentId] = input.dataset.ipadId.split("|"); activities.push({ type: "document", visitId, documentId }); }
   }
   const quickQuestion = $("#ipadQuickQuestion").value.trim(); if (quickQuestion) activities.push({ type: "form", responseId: (await createKioskResponse({}, p.id, room.id, quickQuestion)).id });
-  activeKioskSession = { roomId: room.id, patientId: p.id, activities, currentIndex: 0, pin, language: $("#ipadLanguage").value, completionAction: $("#ipadCompletionAction").value, startedAt: Date.now() }; sessionStorage.setItem("clinicKioskSession", JSON.stringify(activeKioskSession)); $("#ipadLaunchDialog").close(); document.body.classList.add("kiosk-active"); $("#patientKiosk").classList.remove("hidden"); $("#kioskClinicName").textContent = state.settings.clinicName || "Clinic Control"; $("#kioskRoomName").textContent = room.name; renderCurrentKioskActivity(); if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen().catch(() => {}); updateRoomStatus(room.id, room.status === "waiting" ? "nursing" : room.status).catch(console.error);
+  const endpoint = `https://us-central1-${window.firebaseConfig.projectId}.cloudfunctions.net/patientPortal`; const idToken = await auth.currentUser.getIdToken(); const response = await fetch(endpoint, { method: "POST", headers: { "Authorization": `Bearer ${idToken}`, "Content-Type": "application/json" }, body: JSON.stringify({ action: "create", clinicId: activeClinicId, roomId: room.id, patientId: p.id, activities, language: $("#ipadLanguage").value, completionAction: $("#ipadCompletionAction").value }) }); const data = await response.json().catch(() => ({})); if (!response.ok) throw new Error(data.error || "portal-session-failed");
+  $("#ipadLaunchDialog").close(); $("#patientPortalCode").textContent = data.code; $("#patientPortalUrl").value = data.portalUrl; $("#patientPortalDialog").showModal(); toast("Acceso temporal del iPad creado.");
 }
 
 function restorePatientKiosk() {
@@ -2825,6 +2826,8 @@ $("#roomForm").addEventListener("submit", async (event) => { event.preventDefaul
 $("#roomAssignForm").addEventListener("submit", async (event) => { event.preventDefault(); try { await assignRoomFromDialog(); } catch (error) { console.error(error); toast("No se pudo asignar el room."); } });
 $("#ipadLaunchForm").addEventListener("submit", async (event) => { event.preventDefault(); try { await startPatientKiosk(); } catch (error) { console.error(error); toast("No se pudo iniciar la pantalla del paciente."); } });
 $("#ipadCreateTemplateBtn").addEventListener("click", () => { pendingRoomIpadId = $("#ipadRoomId").value; $("#ipadLaunchDialog").close(); openFormTemplateDialog(); });
+$("#copyPatientPortalBtn").addEventListener("click", async () => { await navigator.clipboard.writeText($("#patientPortalUrl").value); toast("Enlace del Portal de Room copiado."); });
+$("#openPatientPortalBtn").addEventListener("click", () => window.open($("#patientPortalUrl").value, "_blank", "noopener"));
 $("#kioskExitBtn").addEventListener("click", exitPatientKiosk);
 $("#waitlistCreateBtn").addEventListener("click", openWaitlistDialog);
 $("#taskCreateBtn").addEventListener("click", () => openTaskDialog());
