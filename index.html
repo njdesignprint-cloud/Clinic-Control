@@ -862,7 +862,10 @@
     <form id="ipadLaunchForm" class="modal compact-modal" method="dialog">
       <div class="modal-head"><div><small>Tablet del consultorio</small><h3>Preparar modo paciente</h3></div><button type="button" class="close-btn" data-close="ipadLaunchDialog">×</button></div>
       <div class="modal-body"><input id="ipadRoomId" type="hidden" /><div id="ipadLaunchContext" class="payment-context"></div><div class="form-grid">
-        <label class="field-group full">Formulario<select id="ipadFormResponse"><option value="">Pantalla de bienvenida solamente</option></select></label>
+        <div class="field-group full"><span class="field-label">Actividades para el paciente</span><div id="ipadActivityList" class="ipad-activity-list"></div><small class="field-hint">Puedes seleccionar varios formularios y documentos; se mostrarán en orden.</small></div>
+        <div class="form-grid full"><label class="field-group">Idioma<select id="ipadLanguage"><option value="es">Español</option><option value="en">English</option></select></label><label class="field-group">Pantalla final<select id="ipadCompletionAction"><option value="ready">Avisar que está listo</option><option value="waiting">Seguir esperando</option></select></label></div>
+        <label class="field-group full">Pregunta rápida del profesional<textarea id="ipadQuickQuestion" rows="2" placeholder="Ej. ¿Qué cambió desde su última visita?"></textarea></label>
+        <button id="ipadCreateTemplateBtn" class="btn light full" type="button">+ Crear otro formulario</button>
         <label class="field-group required full"><span class="field-label">PIN de salida del personal <b>*</b></span><input id="ipadExitPin" type="password" inputmode="numeric" pattern="[0-9]{4,6}" minlength="4" maxlength="6" placeholder="4 a 6 números" required /></label>
       </div><div class="security-note">El paciente no verá menús, otros expedientes ni información administrativa.</div></div>
       <div class="modal-actions"><button type="button" class="btn light" data-close="ipadLaunchDialog">Cancelar</button><button type="submit" class="btn primary">Iniciar modo paciente</button></div>
@@ -871,6 +874,7 @@
 
   <section id="patientKiosk" class="patient-kiosk hidden" aria-live="polite">
     <header><div class="kiosk-brand"><span>✚</span><div><strong id="kioskClinicName">Clinic Control</strong><small id="kioskRoomName">Room</small></div></div><button id="kioskExitBtn" type="button">Salir para personal</button></header>
+    <div id="kioskProgress" class="kiosk-progress hidden"><span id="kioskProgressText"></span><i><b id="kioskProgressBar"></b></i></div>
     <main id="kioskContent"></main>
   </section>
 
