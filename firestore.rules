@@ -10,11 +10,29 @@ service cloud.firestore {
     }
     function roleFor(clinicId) { return request.auth.uid == clinicId ? 'admin' : profile().role; }
     function hasRole(clinicId, roles) { return belongsTo(clinicId) && roleFor(clinicId) in roles; }
+    function validRole(role) { return role in ['admin', 'reception', 'clinical', 'accounting']; }
+    function validMemberStatus(status) { return status in ['active', 'disabled']; }
+    function validNewProfile(userId) {
+      return request.resource.data.uid == userId
+        && request.resource.data.clinicId is string
+        && request.resource.data.name is string
+        && request.resource.data.email is string
+        && validRole(request.resource.data.role)
+        && validMemberStatus(request.resource.data.status);
+    }
+    function validProfileUpdate() {
+      return request.resource.data.clinicId == resource.data.clinicId
+        && request.resource.data.uid == resource.data.uid
+        && request.resource.data.email == resource.data.email
+        && validRole(request.resource.data.role)
+        && validMemberStatus(request.resource.data.status)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'role', 'status', 'updatedAt']);
+    }
 
     match /userProfiles/{userId} {
       allow read: if signedIn() && (request.auth.uid == userId || (resource.data.clinicId != null && hasRole(resource.data.clinicId, ['admin'])));
-      allow create: if signedIn() && request.resource.data.clinicId != null && hasRole(request.resource.data.clinicId, ['admin']);
-      allow update: if signedIn() && resource.data.clinicId != null && hasRole(resource.data.clinicId, ['admin']);
+      allow create: if signedIn() && validNewProfile(userId) && hasRole(request.resource.data.clinicId, ['admin']);
+      allow update: if signedIn() && resource.data.clinicId != null && hasRole(resource.data.clinicId, ['admin']) && validProfileUpdate();
       allow delete: if false;
     }
 
@@ -22,9 +40,21 @@ service cloud.firestore {
       allow read: if belongsTo(clinicId);
       allow write: if hasRole(clinicId, ['admin']);
     }
-    match /clinics/{clinicId}/members/{document=**} {
+    match /clinics/{clinicId}/members/{memberId} {
       allow read: if belongsTo(clinicId);
-      allow write: if hasRole(clinicId, ['admin']);
+      allow create: if hasRole(clinicId, ['admin'])
+        && request.resource.data.uid == memberId
+        && request.resource.data.clinicId == clinicId
+        && validRole(request.resource.data.role)
+        && validMemberStatus(request.resource.data.status);
+      allow update: if hasRole(clinicId, ['admin'])
+        && request.resource.data.uid == resource.data.uid
+        && request.resource.data.clinicId == resource.data.clinicId
+        && request.resource.data.email == resource.data.email
+        && validRole(request.resource.data.role)
+        && validMemberStatus(request.resource.data.status)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'role', 'status', 'updatedAt']);
+      allow delete: if false;
     }
     match /clinics/{clinicId}/patients/{document=**} {
       allow read: if belongsTo(clinicId);
