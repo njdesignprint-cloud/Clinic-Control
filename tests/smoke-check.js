@@ -22,7 +22,15 @@ const missingFunctions = requiredFunctions.filter((name) => !app.includes(`funct
 
 const missingPilotIds = requiredPilotIds.filter((id) => !ids.includes(id));
 const missingPilotChecks = ["reception", "agenda", "consultation", "accounting", "alerts"].filter((id) => !app.includes(`id: "${id}"`));
-const failures = { duplicateIds, missingIds, missingPages, missingDialogs, missingCollections, missingFunctions, missingPilotIds, missingPilotChecks };
+const requiredSecurityRules = [
+  "function validRole(role)",
+  "function validMemberStatus(status)",
+  "request.resource.data.clinicId == resource.data.clinicId",
+  "affectedKeys().hasOnly(['name', 'role', 'status', 'updatedAt'])",
+  "allow delete: if false;"
+];
+const missingSecurityRules = requiredSecurityRules.filter((rule) => !rules.includes(rule));
+const failures = { duplicateIds, missingIds, missingPages, missingDialogs, missingCollections, missingFunctions, missingPilotIds, missingPilotChecks, missingSecurityRules };
 const failed = Object.values(failures).some((items) => items.length);
 if (failed) {
   console.error(JSON.stringify(failures, null, 2));
