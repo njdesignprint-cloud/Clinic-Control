@@ -65,7 +65,7 @@ function detectedRoomFields(document) {
       if (/(?:check|select|mark|marque|seleccione).{0,30}(?:apply|correspond)/i.test(text)) { checkboxSection = true; return; }
       if (checkboxSection && /(?:statement|declaration|consentimiento|signature|firma)/i.test(text)) checkboxSection = false;
       if (checkboxSection && text.length <= 90 && !/:$/.test(text)) {
-        const lineBox = normalizedBox(line.layout); const checkboxBox = lineBox ? { x: Math.max(0, lineBox.x - 0.012), y: lineBox.y, width: 0.012, height: lineBox.height } : null;
+        const lineBox = normalizedBox(line.layout); const checkboxBox = lineBox ? { x: lineBox.x, y: lineBox.y, width: 0.012, height: lineBox.height } : null;
         fields.push({ id: `auto-check-${pageIndex + 1}-${lineIndex + 1}`, label: text.replace(/^[☐□☑✓]\s*/, "").trim(), type: "yesno", required: false, page: pageIndex + 1, box: checkboxBox, placement: "checkbox", confidence: 0.7 });
         return;
       }
@@ -77,6 +77,8 @@ function detectedRoomFields(document) {
       const lineBox = normalizedBox(line.layout); const hasVisibleBlank = /_/.test(text.slice(blankStart)); const targetBox = !hasVisibleBlank && lineBox ? { x: Math.min(0.88, lineBox.x + lineBox.width + 0.006), y: lineBox.y, width: Math.max(0.08, 0.92 - lineBox.x - lineBox.width), height: lineBox.height } : slicedNormalizedBox(line.layout, blankStart / text.length, end / text.length);
       fields.push({ id: `auto-line-${pageIndex + 1}-${lineIndex + 1}`, label, type: inferredFieldType(label), required: false, page: pageIndex + 1, box: targetBox, placement: "blank", confidence: 0.65 });
     });
+    const pageCheckboxes = fields.filter((field) => field.page === pageIndex + 1 && field.placement === "checkbox" && field.box);
+    if (pageCheckboxes.length) { const checkboxColumn = Math.min(...pageCheckboxes.map((field) => field.box.x)); pageCheckboxes.forEach((field) => { field.box.x = checkboxColumn; }); }
   });
   return fields.filter((field, index) => fields.findIndex((candidate) => candidate.label.toLowerCase() === field.label.toLowerCase() && candidate.page === field.page) === index).slice(0, 100);
 }
