@@ -1418,8 +1418,10 @@ function openIpadLaunch(id) {
   const room = roomById(id); const p = patient(room?.patientId); if (!room || !p) return toast("Asigna primero un paciente al room.");
   const pending = state.formResponses.filter((item) => item.patientId === p.id && item.status !== "completed");
   const documents = state.visits.filter((visit) => visit.patientId === p.id).flatMap((visit) => (visit.documents || []).filter((doc) => doc.status !== "signed").map((doc) => ({ ...doc, visitId: visit.id })));
+  const assignedDocumentIds = new Set(documents.map((doc) => doc.documentId));
+  const roomDocuments = state.documents.filter((doc) => doc.type === "application/pdf" && doc.roomReady && !assignedDocumentIds.has(doc.id));
   $("#ipadRoomId").value = id; $("#ipadLaunchContext").innerHTML = `<div><small>Room</small><strong>${escapeHtml(room.name)}</strong></div><div><small>Paciente</small><strong>${escapeHtml(p.name)}</strong></div>`;
-  $("#ipadActivityList").innerHTML = `${pending.length ? `<div class="ipad-activity-group"><strong>Pendientes del paciente</strong>${pending.map((form) => ipadActivityChoice("response", form.id, "☷", form.templateName, "Continuar formulario pendiente", true)).join("")}</div>` : ""}<div class="ipad-activity-group"><strong>Biblioteca de formularios</strong>${state.formTemplates.length ? state.formTemplates.map((template) => ipadActivityChoice("template", template.id, "＋", template.name, `${(template.questions || []).length} pregunta(s)`, false)).join("") : `<small>No hay plantillas digitales.</small>`}</div>${documents.length ? `<div class="ipad-activity-group"><strong>Documentos para firma</strong>${documents.map((doc) => ipadActivityChoice("document", `${doc.visitId}|${doc.documentId}`, "✍", doc.name, "Firma pendiente", true)).join("")}</div>` : ""}`;
+  $("#ipadActivityList").innerHTML = `${pending.length ? `<div class="ipad-activity-group"><strong>Pendientes del paciente</strong>${pending.map((form) => ipadActivityChoice("response", form.id, "☷", form.templateName, "Continuar formulario pendiente", true)).join("")}</div>` : ""}<div class="ipad-activity-group"><strong>Biblioteca de formularios</strong>${state.formTemplates.length ? state.formTemplates.map((template) => ipadActivityChoice("template", template.id, "＋", template.name, `${(template.questions || []).length} pregunta(s)`, false)).join("") : `<small>No hay plantillas digitales.</small>`}</div>${documents.length ? `<div class="ipad-activity-group"><strong>Documentos pendientes</strong>${documents.map((doc) => ipadActivityChoice("document", `${doc.visitId}|${doc.documentId}`, "✍", doc.name, "Asignado y pendiente de firma", true)).join("")}</div>` : ""}<div class="ipad-activity-group"><strong>PDF convertidos para Room</strong>${roomDocuments.length ? roomDocuments.map((doc) => ipadActivityChoice("library-document", doc.id, "PDF", doc.name, `${(doc.fields || []).length ? `${doc.fields.length} campo(s) digitales` : "Revisión y firma"}`, false)).join("") : `<small>No hay otros PDF convertidos disponibles.</small>`}</div>`;
   $("#ipadCreateTemplateBtn").classList.toggle("hidden", currentAccess.role !== "admin");
   $("#ipadLanguage").value = p.language === "English" ? "en" : "es"; $("#ipadCompletionAction").value = "ready"; $("#ipadQuickQuestion").value = ""; $("#ipadLaunchDialog").showModal();
 }
@@ -1432,6 +1434,24 @@ async function createKioskResponse(template, patientId, roomId, quickQuestion = 
   await getCollectionRef("formResponses").doc(id).set(response); state.formResponses.push(response); return response;
 }
 
+async function assignRoomLibraryDocument(documentId, room, patientItem) {
+  const documentItem = state.documents.find((item) => item.id === documentId && item.roomReady); if (!documentItem) return null;
+  const appointment = state.appointments.find((item) => item.id === room.appointmentId);
+  let visit = state.visits.find((item) => item.id === appointment?.visitId)
+    || [...state.visits].filter((item) => item.patientId === patientItem.id && item.roomId === room.id && item.status !== "Cancelada").sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0))[0];
+  if (!visit) {
+    const id = uid(); const now = new Date().toISOString();
+    visit = { id, patientId: patientItem.id, type: "Presencial", date: now, doctor: room.doctor || appointment?.doctor || "", roomId: room.id, roomName: room.name, status: "Programada", reason: appointment?.reason || "Documentos de Room", notes: "", lineItems: [], total: 0, paid: 0, patientPaid: 0, insurancePaid: 0, documents: [], appointmentId: appointment?.id || "", createdAt: now, updatedAt: now };
+  }
+  const existingDocuments = visit.documents || [];
+  if (!existingDocuments.some((item) => item.documentId === documentId)) {
+    visit = { ...visit, documents: [...existingDocuments, { documentId, name: documentItem.name, url: documentItem.url || "", fields: documentItem.fields || [], answers: {}, status: "pending" }], updatedAt: new Date().toISOString() };
+    await saveVisit(visit);
+    const index = state.visits.findIndex((item) => item.id === visit.id); if (index >= 0) state.visits[index] = visit; else state.visits.push(visit);
+  }
+  return { type: "document", visitId: visit.id, documentId };
+}
+
 async function startPatientKiosk() {
   const room = roomById($("#ipadRoomId").value); const p = patient(room?.patientId); if (!room || !p) return toast("Asigna primero un paciente al room.");
   const selected = Array.from($$("#ipadActivityList [data-ipad-kind]:checked")); const activities = [];
@@ -1439,6 +1459,7 @@ async function startPatientKiosk() {
     if (input.dataset.ipadKind === "response") activities.push({ type: "form", responseId: input.dataset.ipadId });
     if (input.dataset.ipadKind === "template") { const template = state.formTemplates.find((item) => item.id === input.dataset.ipadId); if (template) activities.push({ type: "form", responseId: (await createKioskResponse(template, p.id, room.id)).id }); }
     if (input.dataset.ipadKind === "document") { const [visitId, documentId] = input.dataset.ipadId.split("|"); activities.push({ type: "document", visitId, documentId }); }
+    if (input.dataset.ipadKind === "library-document") { const activity = await assignRoomLibraryDocument(input.dataset.ipadId, room, p); if (activity) activities.push(activity); }
   }
   const quickQuestion = $("#ipadQuickQuestion").value.trim(); if (quickQuestion) activities.push({ type: "form", responseId: (await createKioskResponse({}, p.id, room.id, quickQuestion)).id });
   const endpoint = `https://us-central1-${window.firebaseConfig.projectId}.cloudfunctions.net/patientPortal`; const idToken = await auth.currentUser.getIdToken(); const response = await fetch(endpoint, { method: "POST", headers: { "Authorization": `Bearer ${idToken}`, "Content-Type": "application/json" }, body: JSON.stringify({ action: "create", clinicId: activeClinicId, roomId: room.id, patientId: p.id, activities, language: $("#ipadLanguage").value, completionAction: $("#ipadCompletionAction").value }) }); const data = await response.json().catch(() => ({})); if (!response.ok) throw new Error(data.error || "portal-session-failed");
