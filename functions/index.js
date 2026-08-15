@@ -37,12 +37,32 @@ function inferredFieldType(label, valueType = "") {
 
 function detectedRoomFields(document) {
   const fields = [];
-  (document.pages || []).forEach((page, pageIndex) => (page.formFields || []).forEach((formField, fieldIndex) => {
-    const label = documentText(document, formField.fieldName?.layout).replace(/[:_\s]+$/, "").trim();
-    if (!label) return;
-    const valueLayout = formField.fieldValue?.layout;
-    fields.push({ id: `auto-${pageIndex + 1}-${fieldIndex + 1}`, label: label.slice(0, 180), type: inferredFieldType(label, formField.fieldValue?.valueType), required: false, page: pageIndex + 1, box: normalizedBox(valueLayout || formField.fieldName?.layout), confidence: Number(formField.fieldName?.detectedLanguages?.[0]?.confidence || 0) });
-  }));
+  (document.pages || []).forEach((page, pageIndex) => {
+    (page.formFields || []).forEach((formField, fieldIndex) => {
+      const label = documentText(document, formField.fieldName?.layout).replace(/[:_\s]+$/, "").trim();
+      if (!label) return;
+      const valueLayout = formField.fieldValue?.layout;
+      fields.push({ id: `auto-${pageIndex + 1}-${fieldIndex + 1}`, label: label.slice(0, 180), type: inferredFieldType(label, formField.fieldValue?.valueType), required: false, page: pageIndex + 1, box: normalizedBox(valueLayout || formField.fieldName?.layout), confidence: Number(formField.fieldName?.detectedLanguages?.[0]?.confidence || 0) });
+    });
+
+    let checkboxSection = false;
+    (page.lines || []).forEach((line, lineIndex) => {
+      const raw = documentText(document, line.layout).replace(/\s+/g, " ").trim();
+      const text = raw.replace(/^[•·▪◦\-*]\s*/, "").trim();
+      if (!text) return;
+      if (/(?:check|select|mark|marque|seleccione).{0,30}(?:apply|correspond)/i.test(text)) { checkboxSection = true; return; }
+      if (checkboxSection && /(?:statement|declaration|consentimiento|signature|firma)/i.test(text)) checkboxSection = false;
+      if (checkboxSection && text.length <= 90 && !/:$/.test(text)) {
+        fields.push({ id: `auto-check-${pageIndex + 1}-${lineIndex + 1}`, label: text.replace(/^[☐□☑✓]\s*/, "").trim(), type: "yesno", required: false, page: pageIndex + 1, box: normalizedBox(line.layout), confidence: 0.7 });
+        return;
+      }
+      const labeledBlank = /^(.*?):\s*(?:_+|\/?\s*_+|$)/.exec(text);
+      if (!labeledBlank) return;
+      const label = labeledBlank[1].trim();
+      if (!label || label.length > 100 || /^(?:signature|firma)$/i.test(label)) return;
+      fields.push({ id: `auto-line-${pageIndex + 1}-${lineIndex + 1}`, label, type: inferredFieldType(label), required: false, page: pageIndex + 1, box: normalizedBox(line.layout), confidence: 0.65 });
+    });
+  });
   return fields.filter((field, index) => fields.findIndex((candidate) => candidate.label.toLowerCase() === field.label.toLowerCase() && candidate.page === field.page) === index).slice(0, 100);
 }
 

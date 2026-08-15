@@ -611,7 +611,6 @@ async function analyzeClinicDocument(id, openReview = true) {
   const result = await response.json().catch(() => ({})); if (!response.ok) throw new Error(result.error || "document-analysis-failed");
   documentItem.fields = result.fields || []; documentItem.roomReady = Boolean(result.roomReady); documentItem.analysisStatus = result.fields?.length ? "completed" : "signature_only";
   renderClinicDocuments();
-  if (openReview && result.fields?.length) openDocumentFieldsDialog(id);
   toast(result.fields?.length ? `${result.fields.length} campo(s) detectados automáticamente.` : "Documento listo para Room: no requiere campos, solo revisión y firma.");
 }
 
