@@ -1462,6 +1462,7 @@ async function startPatientKiosk() {
     if (input.dataset.ipadKind === "library-document") { const activity = await assignRoomLibraryDocument(input.dataset.ipadId, room, p); if (activity) activities.push(activity); }
   }
   const quickQuestion = $("#ipadQuickQuestion").value.trim(); if (quickQuestion) activities.push({ type: "form", responseId: (await createKioskResponse({}, p.id, room.id, quickQuestion)).id });
+  if (!activities.length) return toast("Selecciona al menos un formulario o PDF para el iPad.");
   const endpoint = `https://us-central1-${window.firebaseConfig.projectId}.cloudfunctions.net/patientPortal`; const idToken = await auth.currentUser.getIdToken(); const response = await fetch(endpoint, { method: "POST", headers: { "Authorization": `Bearer ${idToken}`, "Content-Type": "application/json" }, body: JSON.stringify({ action: "create", clinicId: activeClinicId, roomId: room.id, patientId: p.id, activities, language: $("#ipadLanguage").value, completionAction: $("#ipadCompletionAction").value }) }); const data = await response.json().catch(() => ({})); if (!response.ok) throw new Error(data.error || "portal-session-failed");
   $("#ipadLaunchDialog").close(); $("#patientPortalCode").textContent = data.code; $("#patientPortalUrl").value = data.portalUrl; $("#patientPortalDialog").showModal(); toast("Acceso temporal del iPad creado.");
 }
