@@ -832,9 +832,23 @@ function totals(visits = state.visits) {
 
 function toast(message) {
   const node = $("#toast");
+  clearTimeout(node._hideTimer);
   node.textContent = message;
   node.classList.add("show");
-  setTimeout(() => node.classList.remove("show"), 2200);
+  if (typeof node.showPopover === "function") {
+    try { node.showPopover(); } catch { /* Already visible in the top layer. */ }
+  } else {
+    const openDialog = [...document.querySelectorAll("dialog[open]")].at(-1);
+    if (openDialog && node.parentElement !== openDialog) openDialog.append(node);
+  }
+  node._hideTimer = setTimeout(() => {
+    node.classList.remove("show");
+    if (typeof node.hidePopover === "function") {
+      try { node.hidePopover(); } catch { /* The popover may already be closed. */ }
+    } else if (node.parentElement !== document.body) {
+      document.body.append(node);
+    }
+  }, 2600);
 }
 
 function showPage(pageId) {

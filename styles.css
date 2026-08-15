@@ -2630,6 +2630,10 @@ dialog::backdrop {
 
 #toast {
   position: fixed;
+  inset: auto 24px 24px auto;
+  width: fit-content;
+  max-width: min(420px, calc(100vw - 48px));
+  margin: 0;
   right: 24px;
   bottom: 24px;
   color: white;
@@ -2644,6 +2648,8 @@ dialog::backdrop {
   transition: .2s;
   z-index: 50;
 }
+
+#toast::backdrop { display: none; }
 
 #toast.show {
   transform: translateY(0);
