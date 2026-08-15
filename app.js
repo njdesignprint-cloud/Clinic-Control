@@ -1485,7 +1485,8 @@ function renderCurrentKioskActivity() {
 
 function renderKioskDocument(activity, p) {
   const visit = state.visits.find((item) => item.id === activity.visitId); const doc = visit?.documents?.find((item) => item.documentId === activity.documentId); if (!visit || !doc) return advanceKioskActivity();
-  $("#kioskContent").innerHTML = `<form id="kioskSignatureForm" class="kiosk-form"><div class="kiosk-welcome"><small>${kioskText("Documento digital", "Digital document")}</small><h1>${escapeHtml(doc.name)}</h1><p>${kioskText("Revisa el PDF, completa los campos y firma.", "Review the PDF, complete the fields, and sign.")}</p>${doc.url ? `<a class="btn primary" href="${escapeHtml(doc.url)}" target="_blank" rel="noopener">${kioskText("Abrir PDF", "Open PDF")}</a>` : ""}</div>${doc.url ? `<iframe class="kiosk-document-preview" src="${escapeHtml(doc.url)}" title="${escapeHtml(doc.name)}"></iframe>` : ""}${(doc.fields || []).length ? `<div class="kiosk-questions">${doc.fields.map((field, index) => digitalQuestionHtml(field, doc.answers?.[field.id] || "", index)).join("")}</div>` : ""}<label class="digital-question"><span>${kioskText("Nombre de quien firma", "Signer name")} *</span><input id="kioskSignerName" value="${escapeHtml(p.name)}" required /></label><div class="kiosk-signature"><div><strong>${kioskText("Firma con el dedo o Apple Pencil", "Sign with your finger or Apple Pencil")}</strong><button id="kioskClearSignature" type="button">${kioskText("Limpiar", "Clear")}</button></div><canvas id="kioskSignatureCanvas"></canvas></div><label class="consent-field"><input id="kioskSignatureConsent" type="checkbox" required/><span><strong>${kioskText("Acepto usar esta firma electrónica", "I agree to use this electronic signature")}</strong></span></label><button class="kiosk-submit" type="submit">${kioskText("Guardar y firmar", "Save and sign")}</button></form>`;
+  const visibleFields = (doc.fields || []).filter((field) => !field.hidden && field.type !== "signature");
+  $("#kioskContent").innerHTML = `<form id="kioskSignatureForm" class="kiosk-form"><div class="kiosk-welcome"><small>${kioskText("Documento digital", "Digital document")}</small><h1>${escapeHtml(doc.name)}</h1><p>${kioskText("Revisa el PDF, completa los campos y firma.", "Review the PDF, complete the fields, and sign.")}</p>${doc.url ? `<a class="btn primary" href="${escapeHtml(doc.url)}" target="_blank" rel="noopener">${kioskText("Abrir PDF", "Open PDF")}</a>` : ""}</div>${doc.url ? `<iframe class="kiosk-document-preview" src="${escapeHtml(doc.url)}" title="${escapeHtml(doc.name)}"></iframe>` : ""}${visibleFields.length ? `<div class="kiosk-questions">${visibleFields.map((field, index) => digitalQuestionHtml(field, doc.answers?.[field.id] || "", index)).join("")}</div>` : ""}<label class="digital-question"><span>${kioskText("Nombre de quien firma", "Signer name")} *</span><input id="kioskSignerName" value="${escapeHtml(p.name)}" required /></label><div class="kiosk-signature"><div><strong>${kioskText("Firma con el dedo o Apple Pencil", "Sign with your finger or Apple Pencil")}</strong><button id="kioskClearSignature" type="button">${kioskText("Limpiar", "Clear")}</button></div><canvas id="kioskSignatureCanvas"></canvas></div><label class="consent-field"><input id="kioskSignatureConsent" type="checkbox" required/><span><strong>${kioskText("Acepto usar esta firma electrónica", "I agree to use this electronic signature")}</strong></span></label><button class="kiosk-submit" type="submit">${kioskText("Guardar y firmar", "Save and sign")}</button></form>`;
   initKioskSignatureCanvas(); document.getElementById("kioskSignatureForm")?.addEventListener("submit", saveKioskSignature);
 }
 
@@ -2416,7 +2417,8 @@ function openDocumentFieldsDialog(id) {
   $("#documentFieldsId").value = id;
   $("#documentFieldsTitle").textContent = documentItem.name;
   $("#documentFieldsBuilder").innerHTML = "";
-  (documentItem.fields?.length ? documentItem.fields : [{ id: uid(), label: "", type: "text", required: false }]).forEach(addDocumentFieldRow);
+  const editableFields = (documentItem.fields || []).filter((field) => !field.hidden && field.type !== "signature");
+  (editableFields.length ? editableFields : [{ id: uid(), label: "", type: "text", required: false }]).forEach(addDocumentFieldRow);
   $("#documentFieldsDialog").showModal();
 }
 
@@ -2428,7 +2430,8 @@ function addDocumentFieldRow(field = {}) {
 
 async function saveDocumentFields() {
   const id = $("#documentFieldsId").value; const documentItem = state.documents.find((item) => item.id === id); if (!documentItem) return;
-  const fields = Array.from($$("#documentFieldsBuilder .form-question-row")).map((row) => ({ id: row.dataset.fieldId, label: row.querySelector(".question-label").value.trim(), type: row.querySelector(".question-type").value, required: row.querySelector(".question-required").checked })).filter((field) => field.label);
+  const preservedHiddenFields = (documentItem.fields || []).filter((field) => field.hidden || field.type === "signature");
+  const fields = [...Array.from($$("#documentFieldsBuilder .form-question-row")).map((row) => ({ id: row.dataset.fieldId, label: row.querySelector(".question-label").value.trim(), type: row.querySelector(".question-type").value, required: row.querySelector(".question-required").checked })).filter((field) => field.label), ...preservedHiddenFields];
   if (!fields.length) return toast("Agrega por lo menos un campo digital.");
   await getCollectionRef("documents").doc(id).set({ fields, roomReady: true, updatedAt: new Date().toISOString() }, { merge: true });
   documentItem.fields = fields; documentItem.roomReady = true;

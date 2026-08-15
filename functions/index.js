@@ -27,6 +27,12 @@ function normalizedBox(layout) {
   return { x: Math.min(...xs), y: Math.min(...ys), width: Math.max(...xs) - Math.min(...xs), height: Math.max(...ys) - Math.min(...ys) };
 }
 
+function slicedNormalizedBox(layout, startRatio = 0, endRatio = 1) {
+  const box = normalizedBox(layout); if (!box) return null;
+  const start = Math.max(0, Math.min(1, startRatio)); const end = Math.max(start, Math.min(1, endRatio));
+  return { x: box.x + box.width * start, y: box.y, width: Math.max(0.035, box.width * (end - start)), height: box.height };
+}
+
 function inferredFieldType(label, valueType = "") {
   const text = String(label || "").toLowerCase();
   if (String(valueType).toLowerCase().includes("checkbox") || /(?:sí|si|no|acepto|marque|seleccione)/i.test(text)) return "yesno";
@@ -43,7 +49,8 @@ function detectedRoomFields(document) {
       const label = documentText(document, formField.fieldName?.layout).replace(/[:_\s]+$/, "").trim();
       if (!label) return;
       const valueLayout = formField.fieldValue?.layout;
-      fields.push({ id: `auto-${pageIndex + 1}-${fieldIndex + 1}`, label: label.slice(0, 180), type: inferredFieldType(label, formField.fieldValue?.valueType), required: false, page: pageIndex + 1, box: normalizedBox(valueLayout || formField.fieldName?.layout), confidence: Number(formField.fieldName?.detectedLanguages?.[0]?.confidence || 0) });
+      if (/(?:signature|firma)/i.test(label)) { fields.push({ id: `auto-signature-${pageIndex + 1}-${fieldIndex + 1}`, label: "Firma", type: "signature", hidden: true, required: false, page: pageIndex + 1, box: normalizedBox(valueLayout || formField.fieldName?.layout), placement: "signature", confidence: 0.9 }); return; }
+      fields.push({ id: `auto-${pageIndex + 1}-${fieldIndex + 1}`, label: label.slice(0, 180), type: inferredFieldType(label, formField.fieldValue?.valueType), required: false, page: pageIndex + 1, box: normalizedBox(valueLayout || formField.fieldName?.layout), placement: "value", confidence: Number(formField.fieldName?.detectedLanguages?.[0]?.confidence || 0) });
     });
 
     let checkboxSection = false;
@@ -51,17 +58,23 @@ function detectedRoomFields(document) {
       const raw = documentText(document, line.layout).replace(/\s+/g, " ").trim();
       const text = raw.replace(/^[•·▪◦\-*]\s*/, "").trim();
       if (!text) return;
+      if (/(?:patient.{0,30})?(?:signature|firma)(?:\s+of\s+patient)?\s*[:_]/i.test(text)) {
+        const signatureStart = Math.max(0, text.search(/(?:signature|firma)/i)); const colon = text.indexOf(":", signatureStart); const dateStart = text.slice(colon + 1).search(/\bdate\s*:/i); const startRatio = Math.min(0.82, (colon + 1) / Math.max(text.length, 1)); const endRatio = dateStart >= 0 ? Math.max(startRatio + 0.08, (colon + 1 + dateStart) / text.length) : 1;
+        fields.push({ id: `auto-signature-${pageIndex + 1}-${lineIndex + 1}`, label: "Firma", type: "signature", hidden: true, required: false, page: pageIndex + 1, box: slicedNormalizedBox(line.layout, startRatio, endRatio), placement: "signature", confidence: 0.7 });
+      }
       if (/(?:check|select|mark|marque|seleccione).{0,30}(?:apply|correspond)/i.test(text)) { checkboxSection = true; return; }
       if (checkboxSection && /(?:statement|declaration|consentimiento|signature|firma)/i.test(text)) checkboxSection = false;
       if (checkboxSection && text.length <= 90 && !/:$/.test(text)) {
-        fields.push({ id: `auto-check-${pageIndex + 1}-${lineIndex + 1}`, label: text.replace(/^[☐□☑✓]\s*/, "").trim(), type: "yesno", required: false, page: pageIndex + 1, box: normalizedBox(line.layout), confidence: 0.7 });
+        const lineBox = normalizedBox(line.layout); const checkboxBox = lineBox ? { x: Math.max(0, lineBox.x - Math.max(0.014, lineBox.height)), y: lineBox.y, width: Math.max(0.014, lineBox.height), height: lineBox.height } : null;
+        fields.push({ id: `auto-check-${pageIndex + 1}-${lineIndex + 1}`, label: text.replace(/^[☐□☑✓]\s*/, "").trim(), type: "yesno", required: false, page: pageIndex + 1, box: checkboxBox, placement: "checkbox", confidence: 0.7 });
         return;
       }
       const labeledBlank = /^(.*?):\s*(?:_+|\/?\s*_+|$)/.exec(text);
       if (!labeledBlank) return;
       const label = labeledBlank[1].trim();
       if (!label || label.length > 100 || /^(?:signature|firma)$/i.test(label)) return;
-      fields.push({ id: `auto-line-${pageIndex + 1}-${lineIndex + 1}`, label, type: inferredFieldType(label), required: false, page: pageIndex + 1, box: normalizedBox(line.layout), confidence: 0.65 });
+      const blankStart = text.indexOf(":") + 1; const nextLabel = text.slice(blankStart).search(/\s+[A-Za-z][A-Za-z '\-/]{1,30}:\s*$/); const end = nextLabel >= 0 ? blankStart + nextLabel : text.length;
+      fields.push({ id: `auto-line-${pageIndex + 1}-${lineIndex + 1}`, label, type: inferredFieldType(label), required: false, page: pageIndex + 1, box: slicedNormalizedBox(line.layout, blankStart / text.length, end / text.length), placement: "blank", confidence: 0.65 });
     });
   });
   return fields.filter((field, index) => fields.findIndex((candidate) => candidate.label.toLowerCase() === field.label.toLowerCase() && candidate.page === field.page) === index).slice(0, 100);
@@ -80,10 +93,15 @@ function wrappedPdfLines(text, font, size, maxWidth) {
 async function createCompletedPdf({ source, fields, answers, signatureBytes, signedBy, signedAt, title }) {
   const pdf = await PDFDocument.load(source); const font = await pdf.embedFont(StandardFonts.Helvetica); const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
   for (const field of fields || []) {
+    if (field.type === "signature") continue;
     const answer = String(answers?.[field.id] || "").trim(); const page = pdf.getPages()[Number(field.page || 1) - 1]; if (!answer || !page || !field.box) continue;
-    const { width, height } = page.getSize(); const box = field.box; const x = Math.min(width - 90, Math.max(10, (box.x + (String(field.id).includes("auto-line") ? box.width : 0)) * width + 4)); const y = Math.max(10, height - (box.y + box.height) * height + 2);
-    page.drawText(answer.slice(0, 180), { x, y, size: 9, font, color: rgb(0.05, 0.18, 0.45), maxWidth: Math.max(80, width - x - 12) });
+    const { width, height } = page.getSize(); const box = field.box; const x = Math.max(8, box.x * width + 2); const boxWidth = Math.max(16, box.width * width); const boxHeight = Math.max(11, box.height * height); const y = Math.max(8, height - (box.y + box.height) * height + 2);
+    if (field.type === "yesno") { if (/^(?:sí|si|yes|true)$/i.test(answer)) page.drawText("X", { x, y, size: Math.min(12, boxHeight), font: bold, color: rgb(0, 0, 0) }); continue; }
+    page.drawRectangle({ x: x - 1, y: y - 1, width: boxWidth + 2, height: Math.min(13, boxHeight + 2), color: rgb(1, 1, 1) });
+    page.drawText(answer.slice(0, 180), { x, y, size: Math.min(9, Math.max(7, boxHeight * 0.65)), font, color: rgb(0, 0, 0), maxWidth: boxWidth });
   }
+  const signatureField = (fields || []).find((field) => field.type === "signature" && field.box); const signature = await pdf.embedPng(signatureBytes);
+  if (signatureField) { const signaturePage = pdf.getPages()[Number(signatureField.page || 1) - 1]; if (signaturePage) { const size = signaturePage.getSize(); const box = signatureField.box; const targetWidth = Math.max(90, box.width * size.width); const targetHeight = Math.max(35, box.height * size.height * 2.5); const scale = Math.min(targetWidth / signature.width, targetHeight / signature.height); signaturePage.drawImage(signature, { x: box.x * size.width, y: size.height - (box.y + box.height) * size.height - 4, width: signature.width * scale, height: signature.height * scale }); } }
   let page = pdf.addPage(); let { width, height } = page.getSize(); let y = height - 54;
   page.drawText("Documento completado y firmado", { x: 42, y, size: 17, font: bold }); y -= 25;
   page.drawText(String(title || "Documento"), { x: 42, y, size: 11, font, maxWidth: width - 84 }); y -= 30;
@@ -96,7 +114,7 @@ async function createCompletedPdf({ source, fields, answers, signatureBytes, sig
   if (y < 150) { page = pdf.addPage(); ({ width, height } = page.getSize()); y = height - 48; }
   page.drawText(`Firmado por: ${signedBy}`, { x: 42, y: y - 10, size: 11, font: bold });
   page.drawText(`Fecha: ${new Date(signedAt).toLocaleString("es-US", { timeZone: TIME_ZONE })}`, { x: 42, y: y - 28, size: 9, font });
-  const signature = await pdf.embedPng(signatureBytes); const scale = Math.min(180 / signature.width, 70 / signature.height, 1); page.drawImage(signature, { x: 42, y: y - 108, width: signature.width * scale, height: signature.height * scale });
+  const scale = Math.min(180 / signature.width, 70 / signature.height, 1); page.drawImage(signature, { x: 42, y: y - 108, width: signature.width * scale, height: signature.height * scale });
   page.drawText("Firma electrónica aceptada y almacenada con este registro.", { x: 42, y: y - 125, size: 8, font, color: rgb(0.3, 0.3, 0.3) });
   return Buffer.from(await pdf.save());
 }
@@ -278,7 +296,7 @@ exports.patientPortal = onRequest({ region: "us-central1", cors: false, timeoutS
       const activities = [];
       for (const item of session.activities || []) {
         if (item.type === "form") { const snap = await clinic.collection("formResponses").doc(item.responseId).get(); const data = snap.data(); if (snap.exists) activities.push({ type: "form", responseId: item.responseId, title: data.templateName || "Formulario", description: data.description || "", questions: data.questions || [], answers: data.answers || {} }); }
-        if (item.type === "document") { const snap = await clinic.collection("visits").doc(item.visitId).get(); const doc = (snap.data()?.documents || []).find((entry) => entry.documentId === item.documentId); if (doc) activities.push({ type: "document", visitId: item.visitId, documentId: item.documentId, title: doc.name || "Documento", url: doc.url || "", fields: doc.fields || [], answers: doc.answers || {} }); }
+        if (item.type === "document") { const snap = await clinic.collection("visits").doc(item.visitId).get(); const doc = (snap.data()?.documents || []).find((entry) => entry.documentId === item.documentId); if (doc) activities.push({ type: "document", visitId: item.visitId, documentId: item.documentId, title: doc.name || "Documento", url: doc.url || "", fields: (doc.fields || []).filter((field) => !field.hidden && field.type !== "signature"), answers: doc.answers || {} }); }
       }
       return response.json({ clinicName: settingsSnap.data()?.clinicName || "Clinic Control", roomName: roomSnap.data()?.name || "Room", firstName: (patientSnap.data()?.name || "").split(" ")[0], language: session.language, currentIndex: session.currentIndex || 0, activities, expiresAt: session.expiresAt.toDate().toISOString() });
     }
@@ -296,15 +314,17 @@ exports.patientPortal = onRequest({ region: "us-central1", cors: false, timeoutS
       const answers = request.body.answers || {}; const missing = (doc.fields || []).find((field) => field.required && !String(answers[field.id] || "").trim()); if (missing) return response.status(400).json({ error: "required", label: missing.label });
       const token = crypto.randomUUID(); const path = `clinics/${session.clinicId}/signatures/${item.visitId}/${item.documentId}/${token}.png`; const file = getStorage().bucket().file(path); await file.save(Buffer.from(match[1], "base64"), { metadata: { contentType: "image/png", metadata: { firebaseStorageDownloadTokens: token } } });
       const bucket = getStorage().bucket(); const signatureUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(path)}?alt=media&token=${token}`; const signedAt = new Date().toISOString();
-      const librarySnap = await clinic.collection("documents").doc(item.documentId).get(); const sourcePath = librarySnap.data()?.path; let completedPdfUrl = ""; let completedPdfPath = "";
+      const librarySnap = await clinic.collection("documents").doc(item.documentId).get(); const sourcePath = librarySnap.data()?.path; let completedPdfUrl = ""; let completedPdfPath = ""; let completedFields = doc.fields || [];
       if (sourcePath) {
         try {
-          const [source] = await bucket.file(sourcePath).download(); const completed = await createCompletedPdf({ source, fields: doc.fields || [], answers, signatureBytes: Buffer.from(match[1], "base64"), signedBy, signedAt, title: doc.name });
+          const [source] = await bucket.file(sourcePath).download();
+          if (!completedFields.some((field) => field.placement === "signature") || completedFields.some((field) => field.box && !field.placement)) { const [analysis] = await documentAiClient.processDocument({ name: FORM_PROCESSOR_NAME, rawDocument: { content: source.toString("base64"), mimeType: "application/pdf" } }); completedFields = detectedRoomFields(analysis.document || {}); }
+          const completed = await createCompletedPdf({ source, fields: completedFields, answers, signatureBytes: Buffer.from(match[1], "base64"), signedBy, signedAt, title: doc.name });
           const completedToken = crypto.randomUUID(); completedPdfPath = `clinics/${session.clinicId}/completed-documents/${item.visitId}/${item.documentId}/${completedToken}.pdf`; await bucket.file(completedPdfPath).save(completed, { metadata: { contentType: "application/pdf", contentDisposition: `inline; filename="${String(doc.name || "documento.pdf").replace(/[^a-zA-Z0-9._ -]/g, "")}"`, metadata: { firebaseStorageDownloadTokens: completedToken } } });
           completedPdfUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(completedPdfPath)}?alt=media&token=${completedToken}`;
         } catch (pdfError) { logger.error("Could not create completed PDF", { clinicId: session.clinicId, visitId: item.visitId, documentId: item.documentId, message: pdfError.message }); }
       }
-      const documents = visit.documents.map((entry) => entry.documentId === item.documentId ? { ...entry, answers, status: "signed", signedBy, signedAt, signatureUrl, signaturePath: path, completedPdfUrl, completedPdfPath, consentAccepted: true, signedInRoomId: session.roomId } : entry); await visitRef.update({ documents, updatedAt: signedAt }); await ref.update({ currentIndex: FieldValue.increment(1), updatedAt: FieldValue.serverTimestamp() }); return response.json({ ok: true, completedPdfUrl });
+      const documents = visit.documents.map((entry) => entry.documentId === item.documentId ? { ...entry, fields: completedFields, answers, status: "signed", signedBy, signedAt, signatureUrl, signaturePath: path, completedPdfUrl, completedPdfPath, consentAccepted: true, signedInRoomId: session.roomId } : entry); await visitRef.update({ documents, updatedAt: signedAt }); await ref.update({ currentIndex: FieldValue.increment(1), updatedAt: FieldValue.serverTimestamp() }); return response.json({ ok: true, completedPdfUrl });
     }
     if (action === "complete") {
       await ref.update({ status: "completed", completedAt: FieldValue.serverTimestamp() }); await clinic.collection("rooms").doc(session.roomId).set({ status: session.completionAction || "ready", portalActive: false, portalExpiresAt: null, updatedAt: new Date().toISOString() }, { merge: true }); return response.json({ ok: true });
