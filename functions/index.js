@@ -65,7 +65,7 @@ function detectedRoomFields(document) {
       if (/(?:check|select|mark|marque|seleccione).{0,30}(?:apply|correspond)/i.test(text)) { checkboxSection = true; return; }
       if (checkboxSection && /(?:statement|declaration|consentimiento|signature|firma)/i.test(text)) checkboxSection = false;
       if (checkboxSection && text.length <= 90 && !/:$/.test(text)) {
-        const lineBox = normalizedBox(line.layout); const checkboxBox = lineBox ? { x: lineBox.x, y: lineBox.y, width: Math.max(0.014, lineBox.height), height: lineBox.height } : null;
+        const lineBox = normalizedBox(line.layout); const checkboxBox = lineBox ? { x: Math.max(0, lineBox.x - 0.012), y: lineBox.y, width: 0.012, height: lineBox.height } : null;
         fields.push({ id: `auto-check-${pageIndex + 1}-${lineIndex + 1}`, label: text.replace(/^[☐□☑✓]\s*/, "").trim(), type: "yesno", required: false, page: pageIndex + 1, box: checkboxBox, placement: "checkbox", confidence: 0.7 });
         return;
       }
@@ -87,7 +87,7 @@ async function createCompletedPdf({ source, fields, answers, signatureBytes }) {
     if (field.type === "signature") continue;
     const answer = String(answers?.[field.id] || "").trim(); const page = pdf.getPages()[Number(field.page || 1) - 1]; if (!answer || !page || !field.box) continue;
     const { width, height } = page.getSize(); const box = field.box; const x = Math.max(8, box.x * width + 2); const boxWidth = Math.max(16, box.width * width); const boxHeight = Math.max(11, box.height * height); const y = Math.max(8, height - (box.y + box.height) * height + 2);
-    if (field.type === "yesno") { if (/^(?:sí|si|yes|true)$/i.test(answer)) page.drawText("X", { x, y, size: Math.min(12, boxHeight), font: bold, color: rgb(0, 0, 0) }); continue; }
+    if (field.type === "yesno") { if (/^(?:sí|si|yes|true)$/i.test(answer)) { const markSize = Math.max(5, Math.min(9, boxWidth, boxHeight)); const markX = box.x * width; const markY = height - (box.y + box.height) * height + Math.max(0, (boxHeight - markSize) / 2); page.drawLine({ start: { x: markX + 1, y: markY + 1 }, end: { x: markX + markSize - 1, y: markY + markSize - 1 }, thickness: 1.1, color: rgb(0, 0, 0) }); page.drawLine({ start: { x: markX + 1, y: markY + markSize - 1 }, end: { x: markX + markSize - 1, y: markY + 1 }, thickness: 1.1, color: rgb(0, 0, 0) }); } continue; }
     page.drawRectangle({ x: x - 1, y: y - 1, width: boxWidth + 2, height: Math.min(13, boxHeight + 2), color: rgb(1, 1, 1) });
     const printable = answer.slice(0, 180); const naturalWidth = Math.max(1, font.widthOfTextAtSize(printable, 1)); const fontSize = Math.min(9, Math.max(6, boxWidth / naturalWidth));
     page.drawText(printable, { x, y, size: fontSize, font, color: rgb(0, 0, 0) });
