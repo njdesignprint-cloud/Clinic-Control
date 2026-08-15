@@ -45,6 +45,44 @@ function uid() {
   return `id-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
+function patientSearchText(patientItem) {
+  return `${patientItem?.name || ""} ${patientItem?.phone || ""} ${patientItem?.email || ""} ${patientItem?.document || ""} ${patientItem?.address || ""}`.toLowerCase();
+}
+
+function enablePatientSelectSearch(select, options = {}) {
+  if (!select) return;
+  const selectedValue = select.value;
+  const entries = [...select.options].map((option) => ({
+    value: option.value,
+    label: option.textContent,
+    search: option.value ? patientSearchText(patient(option.dataset.patientId || option.value)) : option.textContent.toLowerCase()
+  }));
+  select._patientSearchEntries = entries;
+
+  let search = select.previousElementSibling;
+  if (!search?.classList.contains("patient-select-search")) {
+    search = document.createElement("input");
+    search.type = "search";
+    search.className = "patient-select-search";
+    search.placeholder = options.placeholder || "Buscar paciente por nombre, teléfono, documento o correo...";
+    search.autocomplete = "off";
+    search.setAttribute("aria-label", options.ariaLabel || "Buscar paciente");
+    select.before(search);
+    search.addEventListener("input", () => {
+      const query = search.value.toLowerCase().trim();
+      const currentValue = select.value;
+      const matches = (select._patientSearchEntries || []).filter((entry) => !query || entry.search.includes(query));
+      select.innerHTML = matches.length
+        ? matches.map((entry) => `<option value="${escapeHtml(entry.value)}">${escapeHtml(entry.label)}</option>`).join("")
+        : `<option value="">No se encontraron pacientes</option>`;
+      if (matches.some((entry) => entry.value === currentValue)) select.value = currentValue;
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+  }
+  search.value = "";
+  if (entries.some((entry) => entry.value === selectedValue)) select.value = selectedValue;
+}
+
 function buildSeedState() {
   return {
     settings: {
@@ -53,6 +91,7 @@ function buildSeedState() {
       clinicPhone: "",
       clinicEmail: "",
       clinicLogo: "",
+      doctors: [],
       invoicePrefix: "FAC",
       invoiceAccentColor: "#0f766e",
       invoiceLogoPosition: "left",
@@ -94,6 +133,7 @@ function normalizeState(saved) {
       clinicPhone: saved?.settings?.clinicPhone || seed.settings.clinicPhone,
       clinicEmail: saved?.settings?.clinicEmail || seed.settings.clinicEmail,
       clinicLogo: saved?.settings?.clinicLogo || seed.settings.clinicLogo,
+      doctors: Array.isArray(saved?.settings?.doctors) ? saved.settings.doctors.filter(Boolean) : seed.settings.doctors,
       invoicePrefix: saved?.settings?.invoicePrefix || seed.settings.invoicePrefix,
       invoiceAccentColor: saved?.settings?.invoiceAccentColor || seed.settings.invoiceAccentColor,
       invoiceLogoPosition: saved?.settings?.invoiceLogoPosition || seed.settings.invoiceLogoPosition,
@@ -981,7 +1021,7 @@ function renderFinanceBars(data) {
 
 function renderPatients() {
   const query = ($("#patientSearch")?.value || "").toLowerCase().trim();
-  const rows = state.patients.filter((p) => `${p.name} ${p.phone} ${p.email || ""} ${p.document} ${p.language || ""} ${p.notes || ""} ${p.source || ""} ${p.lifecycle || ""} ${p.patientAlertMessage || ""} ${p.insuranceCompany || ""} ${p.insuranceMemberId || ""} ${p.insuranceGroup || ""}`.toLowerCase().includes(query));
+  const rows = state.patients.filter((p) => `${p.name} ${p.phone} ${p.email || ""} ${p.address || ""} ${p.document} ${p.language || ""} ${p.notes || ""} ${p.source || ""} ${p.lifecycle || ""} ${p.patientAlertMessage || ""} ${p.insuranceCompany || ""} ${p.insuranceMemberId || ""} ${p.insuranceGroup || ""}`.toLowerCase().includes(query));
 
   $("#patientsTable").innerHTML = rows.length ? rows.map((p) => `
     <tr class="${patientHasAlert(p) ? "patient-alert-row" : ""}">
@@ -1033,6 +1073,7 @@ function openTaskDialog(id = "", patientId = "") {
   $("#taskId").value = task?.id || "";
   $("#taskPatient").innerHTML = `<option value="">Sin paciente</option>${state.patients.map((p) => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join("")}`;
   $("#taskPatient").value = task?.patientId || patientId || "";
+  enablePatientSelectSearch($("#taskPatient"));
   $("#taskTitle").value = task?.title || ""; $("#taskType").value = task?.type || "follow_up"; $("#taskDueDate").value = task?.dueDate || ""; $("#taskPriority").value = task?.priority || "normal"; $("#taskDescription").value = task?.description || "";
   $("#taskDialog").showModal(); requestAnimationFrame(() => $("#taskTitle").focus());
 }
@@ -1046,6 +1087,8 @@ function renderVisitOptions() {
   if ($("#appointmentPatient")) $("#appointmentPatient").innerHTML = state.patients.map((p) => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join("");
   if (state.patients.some((p) => p.id === selectedVisitPatient)) $("#visitPatient").value = selectedVisitPatient;
   if (selectedAppointmentPatient && state.patients.some((p) => p.id === selectedAppointmentPatient)) $("#appointmentPatient").value = selectedAppointmentPatient;
+  enablePatientSelectSearch($("#visitPatient"));
+  enablePatientSelectSearch($("#appointmentPatient"));
   renderAppointmentDoctorOptions();
 }
 
@@ -1106,7 +1149,7 @@ function renderPatientRecord() {
   const summary = `${patientHasAlert(p) ? `<div class="patient-finance-alert"><div><strong>📌 ${escapeHtml(p.patientAlertMessage)}</strong><span>${patientAlertDateLabel(p)}</span></div><button class="btn light" onclick="resolvePatientAlert('${p.id}')">Marcar resuelta</button></div>` : ""}<div class="patient-record-metrics"><div><small>Consultas</small><strong>${visits.length}</strong></div><div><small>Facturado</small><strong>${money(data.billed)}</strong></div><div><small>Pagado</small><strong>${money(data.paid)}</strong></div><div><small>Balance</small><strong>${money(data.debt)}</strong></div></div><div class="patient-record-grid"><article><h3>Información</h3><dl><div><dt>Nacimiento</dt><dd>${fmtBirthDate(p.birthDate)}</dd></div><div><dt>Edad</dt><dd>${escapeHtml(p.age || "—")}</dd></div><div><dt>Idioma</dt><dd>${escapeHtml(p.language || "—")}</dd></div><div><dt>Forma de pago</dt><dd>${escapeHtml(payerLabel(p))}</dd></div><div><dt>Seguro</dt><dd>${escapeHtml(p.insuranceCompany || "—")}</dd></div><div><dt>Estado</dt><dd>${escapeHtml({ active: "Activo", new: "Nuevo", inactive: "Inactivo", lost: "No regresó" }[p.lifecycle] || "Activo")}</dd></div></dl></article><article><h3>Notas</h3><p>${escapeHtml(p.notes || "No hay notas generales para este paciente.")}</p></article></div>`;
   const visitHtml = visits.length ? `<div class="patient-record-list">${visits.map((visit) => `<div><span><strong>${fmtDate(visit.date)} · ${escapeHtml(visit.reason || "Consulta")}</strong><small>${escapeHtml(visit.doctor || "Sin profesional")} · ${escapeHtml(visit.roomName || roomById(visit.roomId)?.name || "Room sin asignar")} · ${escapeHtml((visit.diagnoses || []).join(", ") || invoiceNumber(visit))}</small></span><span><strong>${money(visit.total)}</strong><small>Balance ${money(balance(visit))}</small></span>${["admin", "clinical"].includes(currentAccess.role) ? `<button class="btn light" onclick="editVisit('${visit.id}')">Abrir</button>` : ""}</div>`).join("")}</div>` : `<div class="empty">Este paciente todavía no tiene consultas.</div>`;
   const documentHtml = `<div class="patient-record-section-head"><h3>Formularios digitales</h3><button class="btn primary" onclick="assignDigitalForm('${p.id}')">+ Asignar formulario</button></div>${digitalForms.length ? `<div class="patient-record-list">${digitalForms.map((entry) => `<div><span><strong>${escapeHtml(entry.templateName || "Formulario")}</strong><small>${formCategoryLabels[entry.category] || "Formulario"} · ${fmtDate(entry.updatedAt || entry.createdAt)}</small></span><span class="badge ${entry.status === "completed" ? "green" : "red"}">${entry.status === "completed" ? "Completado" : "Pendiente"}</span><button class="btn light" onclick="openPatientDigitalForm('${entry.id}')">${entry.status === "completed" ? "Ver / editar" : "Completar"}</button></div>`).join("")}</div>` : `<div class="empty">No hay formularios digitales asignados.</div>`}<div class="patient-record-section-head section-spaced"><h3>Documentos y firmas</h3></div>${docs.length ? `<div class="patient-record-list">${docs.map((doc) => `<div><span><strong>${escapeHtml(doc.name)}</strong><small>${fmtDate(doc.visit.date)} · ${doc.status === "signed" ? `Firmado por ${escapeHtml(doc.signedBy)}` : "Pendiente de firma"}</small></span><span class="badge ${doc.status === "signed" ? "green" : "red"}">${doc.status === "signed" ? "Firmado" : "Pendiente"}</span>${doc.url ? `<a class="btn light" href="${escapeHtml(doc.url)}" target="_blank" rel="noopener">Ver</a>` : ""}</div>`).join("")}</div>` : `<div class="empty">No hay documentos asignados.</div>`}`;
-  const paymentHtml = `<div class="patient-record-metrics"><div><small>Facturado</small><strong>${money(data.billed)}</strong></div><div><small>Pagado</small><strong>${money(data.paid)}</strong></div><div><small>Balance</small><strong>${money(data.debt)}</strong></div></div>${payments.length ? `<div class="patient-record-list">${payments.map((entry) => `<div><span><strong>${fmtDate(entry.date)} · ${escapeHtml(paymentMethodLabel(entry.method))}</strong><small>${escapeHtml(entry.reference || "Sin referencia")}${entry.note ? ` · ${escapeHtml(entry.note)}` : ""}</small></span><strong>${money(entry.amount)}</strong><button class="btn light" onclick="openInvoice('${entry.visitId}')">Factura</button></div>`).join("")}</div>` : `<div class="empty">No hay abonos posteriores registrados.</div>`}`;
+  const paymentHtml = `<div class="patient-record-metrics"><div><small>Facturado</small><strong>${money(data.billed)}</strong></div><div><small>Pagado</small><strong>${money(data.paid)}</strong></div><div><small>Balance</small><strong>${money(data.debt)}</strong></div></div>${payments.length ? `<div class="patient-record-list">${payments.map((entry) => `<div><span><strong>${fmtDate(entry.date)} · ${escapeHtml(paymentMethodDetail(entry))}</strong><small>${escapeHtml(entry.reference || "Sin referencia")}${entry.note ? ` · ${escapeHtml(entry.note)}` : ""}</small></span><strong>${money(entry.amount)}</strong><button class="btn light" onclick="openInvoice('${entry.visitId}')">Factura</button></div>`).join("")}</div>` : `<div class="empty">No hay abonos posteriores registrados.</div>`}`;
   const alertHtml = `${patientHasAlert(p) ? `<div class="patient-alert-detail"><span>📌</span><div><h3>${escapeHtml(p.patientAlertMessage)}</h3><p>${patientAlertDateLabel(p)}</p></div><button class="btn primary" onclick="resolvePatientAlert('${p.id}')">Marcar resuelta</button></div>` : ""}<div class="patient-record-section-head"><h3>Tareas y seguimientos</h3><button class="btn primary" onclick="openTaskDialog('', '${p.id}')">+ Agregar tarea</button></div>${patientTasks.length ? `<div class="patient-record-list">${patientTasks.map((task) => `<div><span><strong>${escapeHtml(task.title)}</strong><small>${taskTypes[task.type] || "Tarea"} · ${task.dueDate ? new Date(task.dueDate).toLocaleString("es-US") : "Sin fecha"}</small></span><span class="badge ${task.status === "completed" ? "green" : taskIsOverdue(task) ? "red" : "blue"}">${task.status === "completed" ? "Completada" : taskIsOverdue(task) ? "Vencida" : "Pendiente"}</span><button class="btn light" onclick="toggleTask('${task.id}')">${task.status === "completed" ? "Reabrir" : "Completar"}</button></div>`).join("")}</div>` : `<div class="empty">No hay tareas para este paciente.</div>`}`;
   const communicationHtml = `<div class="patient-record-section-head"><h3>Historial de comunicaciones</h3><button class="btn primary" onclick="openCommunicationDialog('${p.id}')">+ Registrar contacto</button></div>${communications.length ? `<div class="communication-history">${communications.map((entry) => `<article><span class="communication-channel">${communicationIcons[entry.channel] || "●"}</span><div><strong>${escapeHtml(entry.subject)}</strong><p>${escapeHtml(entry.notes || "Sin notas")}</p><small>${entry.direction === "inbound" ? "Entrante" : "Saliente"} · ${communicationChannelLabels[entry.channel] || entry.channel} · ${fmtDate(entry.createdAt)} · ${escapeHtml(entry.userEmail || "Equipo")}</small></div>${communicationActionHtml(entry, p)}</article>`).join("")}</div>` : `<div class="empty">Todavía no se han registrado comunicaciones.</div>`}`;
   const clinicalHtml = `<div class="patient-record-section-head"><div><h3>Resumen clínico</h3><small>Actualizado ${clinicalRecord.updatedAt ? fmtDate(clinicalRecord.updatedAt) : "—"}</small></div><button class="btn primary" onclick="openClinicalRecordDialog('${p.id}')">Editar resumen</button></div>${(clinicalRecord.allergies || []).length ? `<div class="clinical-allergy-alert"><strong>⚠ Alergias</strong><span>${escapeHtml(clinicalRecord.allergies.join(" · "))}</span></div>` : `<div class="clinical-no-allergies">Sin alergias registradas</div>`}${latestVitalsVisit ? `<div class="latest-vitals"><div><small>Presión</small><strong>${escapeHtml(latestVitalsVisit.vitals.bloodPressure || "—")}</strong></div><div><small>Pulso</small><strong>${escapeHtml(latestVitalsVisit.vitals.pulse || "—")}</strong></div><div><small>Temperatura</small><strong>${latestVitalsVisit.vitals.temperature ? `${escapeHtml(latestVitalsVisit.vitals.temperature)} °F` : "—"}</strong></div><div><small>Peso</small><strong>${latestVitalsVisit.vitals.weight ? `${escapeHtml(latestVitalsVisit.vitals.weight)} lb` : "—"}</strong></div><div><small>SpO₂</small><strong>${latestVitalsVisit.vitals.oxygen ? `${escapeHtml(latestVitalsVisit.vitals.oxygen)}%` : "—"}</strong></div><div><small>Fecha</small><strong>${fmtDate(latestVitalsVisit.date)}</strong></div></div>` : ""}<div class="clinical-summary-grid">${clinicalListCard("Medicamentos activos", clinicalRecord.medications)}${clinicalListCard("Problemas activos", clinicalRecord.conditions)}${clinicalListCard("Cirugías y hospitalizaciones", clinicalRecord.surgeries)}${clinicalListCard("Inmunizaciones", clinicalRecord.immunizations)}<article><h4>Tipo de sangre</h4><p>${escapeHtml(clinicalRecord.bloodType || "No indicado")}</p></article><article><h4>Antecedentes familiares</h4><p>${escapeHtml(clinicalRecord.familyHistory || "No registrados")}</p></article><article><h4>Historia social</h4><p>${escapeHtml(clinicalRecord.socialHistory || "No registrada")}</p></article></div>`;
@@ -1160,18 +1203,36 @@ async function resolvePatientAlert(id) {
 }
 
 function appointmentDoctors() {
-  return [...new Set([...state.appointments, ...state.visits].map((item) => String(item.doctor || "").trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  return [...new Set([
+    ...(state.settings.doctors || []),
+    ...[...state.appointments, ...state.visits].map((item) => String(item.doctor || "").trim())
+  ].filter(Boolean))].sort((a, b) => a.localeCompare(b, "es"));
 }
 
 function renderAppointmentDoctorOptions() {
   const doctors = appointmentDoctors();
+  const configuredDoctors = [...new Set((state.settings.doctors || []).map((name) => String(name).trim()).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b, "es"));
   const datalist = $("#appointmentDoctorOptions");
-  if (datalist) datalist.innerHTML = doctors.map((name) => `<option value="${escapeHtml(name)}"></option>`).join("");
+  if (datalist) datalist.innerHTML = configuredDoctors.map((name) => `<option value="${escapeHtml(name)}"></option>`).join("");
   const filter = $("#appointmentDoctorFilter");
   if (!filter) return;
   const selected = filter.value;
   filter.innerHTML = `<option value="">Todos los profesionales</option>${doctors.map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join("")}`;
   if (doctors.includes(selected)) filter.value = selected;
+
+  [
+    ["#appointmentDoctor", "Sin profesional asignado"],
+    ["#visitDoctor", "Sin doctor asignado"],
+    ["#roomAssignDoctor", "Sin profesional asignado"],
+    ["#waitlistDoctor", "Cualquier profesional"]
+  ].forEach(([selector, emptyLabel]) => {
+    const select = $(selector); if (!select) return;
+    const current = select.value;
+    select.innerHTML = `<option value="">${emptyLabel}</option>${configuredDoctors.map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join("")}`;
+    if (current && !configuredDoctors.includes(current)) select.insertAdjacentHTML("beforeend", `<option value="${escapeHtml(current)}">${escapeHtml(current)} (histórico)</option>`);
+    select.value = current;
+  });
 }
 
 function startOfAppointmentWeek(value) {
@@ -1301,7 +1362,7 @@ async function saveRoomFromDialog() {
 }
 
 function openRoomAssignDialog(id) {
-  const room = roomById(id); if (!room) return; $("#roomAssignId").value = id; $("#roomAssignTitle").textContent = `Asignar ${room.name}`; $("#roomAssignPatient").innerHTML = state.patients.map((p) => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join(""); $("#roomAssignPatient").value = room.patientId || state.patients[0]?.id || ""; $("#roomAssignDoctor").value = room.doctor || ""; $("#roomAssignStatus").value = room.status && !["available", "cleaning"].includes(room.status) ? room.status : "waiting"; renderRoomAppointmentChoices(); $("#roomAssignDialog").showModal();
+  const room = roomById(id); if (!room) return; $("#roomAssignId").value = id; $("#roomAssignTitle").textContent = `Asignar ${room.name}`; $("#roomAssignPatient").innerHTML = state.patients.map((p) => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join(""); $("#roomAssignPatient").value = room.patientId || state.patients[0]?.id || ""; enablePatientSelectSearch($("#roomAssignPatient")); $("#roomAssignDoctor").value = room.doctor || ""; $("#roomAssignStatus").value = room.status && !["available", "cleaning"].includes(room.status) ? room.status : "waiting"; renderRoomAppointmentChoices(); $("#roomAssignDialog").showModal();
 }
 
 function renderRoomAppointmentChoices() {
@@ -1369,7 +1430,7 @@ function renderCurrentKioskActivity() {
 
 function renderKioskDocument(activity, p) {
   const visit = state.visits.find((item) => item.id === activity.visitId); const doc = visit?.documents?.find((item) => item.documentId === activity.documentId); if (!visit || !doc) return advanceKioskActivity();
-  $("#kioskContent").innerHTML = `<form id="kioskSignatureForm" class="kiosk-form"><div class="kiosk-welcome"><small>${kioskText("Documento", "Document")}</small><h1>${escapeHtml(doc.name)}</h1><p>${kioskText("Abre y revisa el documento antes de firmar.", "Open and review the document before signing.")}</p>${doc.url ? `<a class="btn primary" href="${escapeHtml(doc.url)}" target="_blank" rel="noopener">${kioskText("Abrir documento", "Open document")}</a>` : ""}</div><label class="digital-question"><span>${kioskText("Nombre de quien firma", "Signer name")} *</span><input id="kioskSignerName" value="${escapeHtml(p.name)}" required /></label><div class="kiosk-signature"><div><strong>${kioskText("Firma con el dedo o Apple Pencil", "Sign with your finger or Apple Pencil")}</strong><button id="kioskClearSignature" type="button">${kioskText("Limpiar", "Clear")}</button></div><canvas id="kioskSignatureCanvas"></canvas></div><label class="consent-field"><input id="kioskSignatureConsent" type="checkbox" required/><span><strong>${kioskText("Acepto usar esta firma electrónica", "I agree to use this electronic signature")}</strong></span></label><button class="kiosk-submit" type="submit">${kioskText("Firmar y continuar", "Sign and continue")}</button></form>`;
+  $("#kioskContent").innerHTML = `<form id="kioskSignatureForm" class="kiosk-form"><div class="kiosk-welcome"><small>${kioskText("Documento digital", "Digital document")}</small><h1>${escapeHtml(doc.name)}</h1><p>${kioskText("Revisa el PDF, completa los campos y firma.", "Review the PDF, complete the fields, and sign.")}</p>${doc.url ? `<a class="btn primary" href="${escapeHtml(doc.url)}" target="_blank" rel="noopener">${kioskText("Abrir PDF", "Open PDF")}</a>` : ""}</div>${doc.url ? `<iframe class="kiosk-document-preview" src="${escapeHtml(doc.url)}" title="${escapeHtml(doc.name)}"></iframe>` : ""}${(doc.fields || []).length ? `<div class="kiosk-questions">${doc.fields.map((field, index) => digitalQuestionHtml(field, doc.answers?.[field.id] || "", index)).join("")}</div>` : ""}<label class="digital-question"><span>${kioskText("Nombre de quien firma", "Signer name")} *</span><input id="kioskSignerName" value="${escapeHtml(p.name)}" required /></label><div class="kiosk-signature"><div><strong>${kioskText("Firma con el dedo o Apple Pencil", "Sign with your finger or Apple Pencil")}</strong><button id="kioskClearSignature" type="button">${kioskText("Limpiar", "Clear")}</button></div><canvas id="kioskSignatureCanvas"></canvas></div><label class="consent-field"><input id="kioskSignatureConsent" type="checkbox" required/><span><strong>${kioskText("Acepto usar esta firma electrónica", "I agree to use this electronic signature")}</strong></span></label><button class="kiosk-submit" type="submit">${kioskText("Guardar y firmar", "Save and sign")}</button></form>`;
   initKioskSignatureCanvas(); document.getElementById("kioskSignatureForm")?.addEventListener("submit", saveKioskSignature);
 }
 
@@ -1377,7 +1438,7 @@ function initKioskSignatureCanvas() { const canvas = document.getElementById("ki
 
 async function saveKioskForm(event) { event.preventDefault(); const activity = currentKioskActivity(); const response = state.formResponses.find((item) => item.id === activity?.responseId); if (!response) return advanceKioskActivity(); const answers = Object.fromEntries(Array.from($$("#kioskContent [data-answer-id]")).map((input) => [input.dataset.answerId, input.value.trim()])); const missing = (response.questions || []).find((q) => q.required && !answers[q.id]); if (missing) return toast(`${kioskText("Completa", "Complete")}: ${missing.label}`); await getCollectionRef("formResponses").doc(response.id).set({ answers, status: "completed", updatedAt: new Date().toISOString(), completedAt: new Date().toISOString(), completedBy: "patient-kiosk", roomId: activeKioskSession.roomId }, { merge: true }); recordActivity({ action: "completed", entityType: "form", entityId: response.id, patientId: response.patientId, title: "Formulario completado en iPad", detail: `${response.templateName} · ${roomById(activeKioskSession.roomId)?.name || "Room"}` }).catch(console.error); advanceKioskActivity(); }
 
-async function saveKioskSignature(event) { event.preventDefault(); const activity = currentKioskActivity(); const visit = state.visits.find((item) => item.id === activity?.visitId); const doc = visit?.documents?.find((item) => item.documentId === activity?.documentId); const canvas = document.getElementById("kioskSignatureCanvas"); const signedBy = document.getElementById("kioskSignerName").value.trim(); if (!visit || !doc) return advanceKioskActivity(); if (!signedBy || canvas.dataset.hasInk !== "true") return toast(kioskText("Escribe el nombre y dibuja la firma.", "Enter the name and draw the signature.")); if (!document.getElementById("kioskSignatureConsent").checked) return toast(kioskText("Confirma la aceptación de la firma.", "Confirm signature acceptance.")); const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png")); const path = `clinics/${activeClinicId}/signatures/${visit.id}/${doc.documentId}/${uid()}.png`; const ref = storage.ref(path); await ref.put(blob, { contentType: "image/png" }); const signatureUrl = await ref.getDownloadURL(); const signedAt = new Date().toISOString(); const documents = visit.documents.map((item) => item.documentId === doc.documentId ? { ...item, status: "signed", signedBy, signedAt, signatureUrl, signaturePath: path, consentAccepted: true, signedByUserId: auth.currentUser.uid, signedInRoomId: activeKioskSession.roomId } : item); await saveVisit({ id: visit.id, documents }); visit.documents = documents; recordActivity({ action: "signed", entityType: "signature", entityId: doc.documentId, patientId: visit.patientId, visitId: visit.id, title: "Documento firmado en iPad", detail: `${doc.name} · ${roomById(activeKioskSession.roomId)?.name || "Room"}` }).catch(console.error); advanceKioskActivity(); }
+async function saveKioskSignature(event) { event.preventDefault(); const activity = currentKioskActivity(); const visit = state.visits.find((item) => item.id === activity?.visitId); const doc = visit?.documents?.find((item) => item.documentId === activity?.documentId); const canvas = document.getElementById("kioskSignatureCanvas"); const signedBy = document.getElementById("kioskSignerName").value.trim(); if (!visit || !doc) return advanceKioskActivity(); const answers = Object.fromEntries(Array.from($$("#kioskContent [data-answer-id]")).map((input) => [input.dataset.answerId, input.value.trim()])); const missing = (doc.fields || []).find((field) => field.required && !answers[field.id]); if (missing) return toast(`${kioskText("Completa", "Complete")}: ${missing.label}`); if (!signedBy || canvas.dataset.hasInk !== "true") return toast(kioskText("Escribe el nombre y dibuja la firma.", "Enter the name and draw the signature.")); if (!document.getElementById("kioskSignatureConsent").checked) return toast(kioskText("Confirma la aceptación de la firma.", "Confirm signature acceptance.")); const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png")); const path = `clinics/${activeClinicId}/signatures/${visit.id}/${doc.documentId}/${uid()}.png`; const ref = storage.ref(path); await ref.put(blob, { contentType: "image/png" }); const signatureUrl = await ref.getDownloadURL(); const signedAt = new Date().toISOString(); const documents = visit.documents.map((item) => item.documentId === doc.documentId ? { ...item, answers, status: "signed", signedBy, signedAt, signatureUrl, signaturePath: path, consentAccepted: true, signedByUserId: auth.currentUser.uid, signedInRoomId: activeKioskSession.roomId } : item); await saveVisit({ id: visit.id, documents }); visit.documents = documents; recordActivity({ action: "signed", entityType: "signature", entityId: doc.documentId, patientId: visit.patientId, visitId: visit.id, title: "Documento digital completado y firmado en iPad", detail: `${doc.name} · ${roomById(activeKioskSession.roomId)?.name || "Room"}` }).catch(console.error); advanceKioskActivity(); }
 
 function advanceKioskActivity() { activeKioskSession.currentIndex += 1; sessionStorage.setItem("clinicKioskSession", JSON.stringify(activeKioskSession)); renderCurrentKioskActivity(); }
 function finishKioskActivities(p) { $("#kioskProgress").classList.add("hidden"); $("#kioskContent").innerHTML = `<div class="kiosk-done"><span>✓</span><h1>${kioskText("¡Gracias!", "Thank you!")}</h1><p>${kioskText("Todo quedó guardado. Avise al personal o entregue el iPad.", "Everything has been saved. Please notify staff or return the iPad.")}</p></div>`; if (!activeKioskSession.finishedAt) { activeKioskSession.finishedAt = Date.now(); sessionStorage.setItem("clinicKioskSession", JSON.stringify(activeKioskSession)); updateRoomStatus(activeKioskSession.roomId, activeKioskSession.completionAction || "ready").catch(console.error); recordActivity({ action: "completed", entityType: "room", entityId: activeKioskSession.roomId, patientId: p.id, title: "Paciente terminó actividades en iPad", detail: roomById(activeKioskSession.roomId)?.name || "Room" }).catch(console.error); } }
@@ -1657,18 +1718,40 @@ function renderPaymentHistory() {
     if (activeBillingTab === "cash" && paymentType(visit || {}) !== "cash") return false;
     if (activeBillingTab === "insurance" && paymentType(visit || {}) !== "insurance") return false;
     if (activeBillingTab === "pending" && balance(visit || {}) <= 0) return false;
-    const searchable = `${p?.name || ""} ${p?.document || ""} ${invoiceNumber(visit || { id: entry.visitId })} ${entry.reference || ""} ${entry.note || ""} ${paymentMethodLabel(entry.method)}`.toLowerCase();
+    const searchable = `${p?.name || ""} ${p?.document || ""} ${invoiceNumber(visit || { id: entry.visitId })} ${entry.reference || ""} ${entry.note || ""} ${paymentMethodDetail(entry)}`.toLowerCase();
     return searchable.includes(query);
   }).sort((a, b) => new Date(b.date) - new Date(a.date));
   box.innerHTML = payments.length ? payments.map((entry) => {
     const p = patient(entry.patientId);
     const visit = state.visits.find((item) => item.id === entry.visitId);
-    return `<div class="payment-history-row"><div class="payment-source-icon ${entry.source}">${entry.source === "insurance" ? "S" : "$"}</div><div><strong>${escapeHtml(p?.name || "Paciente eliminado")}</strong><span>${fmtDate(entry.date)} · ${entry.initial ? "Pago inicial" : escapeHtml(paymentMethodLabel(entry.method))}${entry.reference && !entry.initial ? ` · ${escapeHtml(entry.reference)}` : ""}</span><small>${escapeHtml(invoiceNumber(visit || { id: entry.visitId }))}${entry.note ? ` · ${escapeHtml(entry.note)}` : ""}</small></div><strong>${money(entry.amount)}</strong></div>`;
+    return `<div class="payment-history-row"><div class="payment-source-icon ${entry.source}">${entry.source === "insurance" ? "S" : "$"}</div><div><strong>${escapeHtml(p?.name || "Paciente eliminado")}</strong><span>${fmtDate(entry.date)} · ${entry.initial ? "Pago inicial" : escapeHtml(paymentMethodDetail(entry))}${entry.reference && !entry.initial ? ` · ${escapeHtml(entry.reference)}` : ""}</span><small>${escapeHtml(invoiceNumber(visit || { id: entry.visitId }))}${entry.note ? ` · ${escapeHtml(entry.note)}` : ""}</small></div><strong>${money(entry.amount)}</strong></div>`;
   }).join("") : `<div class="empty">No hay pagos que coincidan con el cliente y las fechas seleccionadas.</div>`;
 }
 
 function paymentMethodLabel(method) {
   return { cash: "Efectivo", card: "Tarjeta", check: "Cheque", transfer: "Transferencia", insurance_eft: "EFT de seguro", other: "Otro" }[method] || method || "Pago";
+}
+
+function cardTypeLabel(type) {
+  return { visa: "Visa", mastercard: "Mastercard", amex: "American Express", discover: "Discover", other: "Otra" }[type] || "Tarjeta";
+}
+
+function paymentMethodDetail(entry) {
+  if (entry?.method !== "card") return paymentMethodLabel(entry?.method);
+  const last4 = String(entry.cardLast4 || "").replace(/\D/g, "").slice(-4);
+  return `${cardTypeLabel(entry.cardType)}${last4 ? ` •••• ${last4}` : ""}`;
+}
+
+function togglePaymentCardFields() {
+  const isCard = $("#paymentMethod").value === "card";
+  $("#paymentCardFields").classList.toggle("hidden", !isCard);
+  $("#paymentCardType").required = isCard;
+  $("#paymentCardLast4").required = isCard;
+  if (!isCard) {
+    $("#paymentCardType").value = "";
+    $("#paymentCardLast4").value = "";
+    setFieldError($("#paymentCardLast4"), $("#paymentCardLast4Error"), "");
+  }
 }
 
 function renderVisitPaymentPanel(visit = null) {
@@ -1690,7 +1773,7 @@ function renderVisitPaymentPanel(visit = null) {
       <button type="button" class="btn primary" onclick="openPaymentDialog('${visit.id}')" ${currentBalance <= 0 ? "disabled" : ""}>+ Registrar otro pago</button>
     </div>
     <div class="visit-payment-history">
-      ${entries.map((entry) => `<div class="visit-payment-entry"><div><strong>${fmtDate(entry.date)}</strong><small>${escapeHtml(paymentMethodLabel(entry.method))}${entry.reference ? ` · ${escapeHtml(entry.reference)}` : ""}</small>${entry.note ? `<span>${escapeHtml(entry.note)}</span>` : ""}</div><span class="badge ${entry.source === "insurance" ? "blue" : "green"}">${entry.source === "insurance" ? "Seguro" : "Paciente"}</span><strong>${money(entry.amount)}</strong></div>`).join("")}
+      ${entries.map((entry) => `<div class="visit-payment-entry"><div><strong>${fmtDate(entry.date)}</strong><small>${escapeHtml(paymentMethodDetail(entry))}${entry.reference ? ` · ${escapeHtml(entry.reference)}` : ""}</small>${entry.note ? `<span>${escapeHtml(entry.note)}</span>` : ""}</div><span class="badge ${entry.source === "insurance" ? "blue" : "green"}">${entry.source === "insurance" ? "Seguro" : "Paciente"}</span><strong>${money(entry.amount)}</strong></div>`).join("")}
       ${initialPayment > 0 ? `<div class="visit-payment-entry initial-payment"><div><strong>${fmtDate(visit.date)}</strong><small>Pago registrado al crear la consulta</small></div><span class="badge green">Inicial</span><strong>${money(initialPayment)}</strong></div>` : ""}
       ${!entries.length && initialPayment <= 0 ? `<div class="empty document-empty">Todavía no hay pagos registrados para esta consulta.</div>` : ""}
     </div>`;
@@ -1739,6 +1822,7 @@ function renderInvoicePatientOptions() {
     .sort((a, b) => a.name.localeCompare(b.name, "es"));
   select.innerHTML = `<option value="">Todos los clientes</option>${options.map((item) => `<option value="${item.id}">${escapeHtml(item.name)}</option>`).join("")}`;
   if (options.some((item) => item.id === selected)) select.value = selected;
+  enablePatientSelectSearch(select, { placeholder: "Buscar cliente...", ariaLabel: "Buscar cliente para filtrar facturas" });
 }
 
 function openInvoice(id) {
@@ -1764,8 +1848,8 @@ function openInvoice(id) {
         <div class="invoice-heading"><strong>FACTURA</strong><span>${escapeHtml(invoiceNumber(visit))}</span></div>
       </header>
       <div class="invoice-meta">
-        <div><small>Paciente</small><strong>${escapeHtml(p?.name || "Paciente eliminado")}</strong><span>${escapeHtml(p?.phone || "")}</span><span>${escapeHtml(payerLabel(p))}</span></div>
-        <div><small>Fecha</small><strong>${fmtDate(visit.date)}</strong>${design.showDoctor ? `<span>${escapeHtml(visit.doctor || "Sin doctor asignado")}</span>` : ""}${design.showInsurance ? `<span>${escapeHtml(payerLabel(p))}</span>` : ""}</div>
+        <div><small>Paciente</small><strong>${escapeHtml(p?.name || "Paciente eliminado")}</strong><span>${escapeHtml(p?.address || "Dirección no indicada")}</span><span>${escapeHtml(p?.phone || "")}</span><span>${escapeHtml(payerLabel(p))}</span></div>
+        <div><small>Fecha y hora</small><strong>${fmtDate(visit.date)}</strong><span>Doctor: ${escapeHtml(visit.doctor || "Sin doctor asignado")}</span>${design.showInsurance ? `<span>${escapeHtml(payerLabel(p))}</span>` : ""}</div>
       </div>
       <table class="invoice-items">
         <thead><tr><th>Descripción del servicio</th><th>Cantidad</th><th>Precio</th><th>Total</th></tr></thead>
@@ -1832,8 +1916,11 @@ function downloadInvoicePdf(id = activeInvoiceId) {
   y += 17;
   pdf.setFont("helvetica", "normal");
   pdf.text(`Teléfono: ${p?.phone || "No indicado"}`, left, y);
-  if (design.showDoctor) pdf.text(`Doctor: ${visit.doctor || "No indicado"}`, 320, y);
+  pdf.text(`Doctor: ${visit.doctor || "No indicado"}`, 320, y);
   y += 17;
+  const patientAddressLines = pdf.splitTextToSize(`Dirección: ${p?.address || "No indicada"}`, 250);
+  pdf.text(patientAddressLines, left, y);
+  y += Math.max(17, patientAddressLines.length * 12);
   if (design.showInsurance) pdf.text(`Responsable de pago: ${payerLabel(p)}`, left, y);
   if (design.showInsurance && p?.payerType === "insurance" && p.insuranceMemberId) pdf.text(`ID de miembro: ${p.insuranceMemberId}`, 320, y);
   y += 32;
@@ -2132,11 +2219,43 @@ function renderSettings() {
     ? `<img src="${state.settings.clinicLogo}" alt="Logo de la clínica" />`
     : `<span>Sin logo</span>`;
   renderInvoiceStylePreview();
+  renderDoctorSettings();
+  renderAppointmentDoctorOptions();
   renderClinicDocuments();
   renderAuditLogPreview();
   renderTeamMembers();
   renderFormTemplates();
   applyRoleAccess();
+}
+
+function renderDoctorSettings() {
+  const container = $("#doctorSettingsList");
+  if (!container) return;
+  const doctors = [...new Set((state.settings.doctors || []).map((name) => String(name).trim()).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b, "es"));
+  state.settings.doctors = doctors;
+  container.innerHTML = doctors.length
+    ? doctors.map((name) => `<div class="doctor-setting-row"><span>${escapeHtml(name)}</span><button class="icon-btn" type="button" data-remove-doctor="${escapeHtml(name)}" title="Quitar médico">⌫</button></div>`).join("")
+    : `<div class="empty">Todavía no hay médicos configurados.</div>`;
+}
+
+function addConfiguredDoctor() {
+  const input = $("#doctorNameInput");
+  const name = input.value.trim();
+  if (!name) return toast("Escribe el nombre del médico.");
+  const doctors = state.settings.doctors || [];
+  if (doctors.some((item) => item.toLowerCase() === name.toLowerCase())) return toast("Este médico ya está en la lista.");
+  state.settings.doctors = [...doctors, name];
+  input.value = "";
+  renderDoctorSettings();
+  renderAppointmentDoctorOptions();
+  toast("Médico agregado. Guarda los cambios para confirmar.");
+}
+
+function removeConfiguredDoctor(name) {
+  state.settings.doctors = (state.settings.doctors || []).filter((item) => item !== name);
+  renderDoctorSettings();
+  renderAppointmentDoctorOptions();
 }
 
 function renderTeamMembers() {
@@ -2207,8 +2326,9 @@ function renderClinicDocuments() {
   box.innerHTML = state.documents.length ? state.documents.map((item) => `
     <div class="document-row">
       <span class="document-icon">${item.type === "application/pdf" ? "PDF" : "DOC"}</span>
-      <div><strong>${escapeHtml(item.name)}</strong><small>${formatFileSize(item.size)} · Disponible en consultas</small></div>
+      <div><strong>${escapeHtml(item.name)}</strong><small>${formatFileSize(item.size)} · ${(item.fields || []).length ? `${item.fields.length} campo(s) digitales · Listo para Room` : "Disponible para firma"}</small></div>
       <a class="btn light" href="${escapeHtml(item.url)}" target="_blank" rel="noopener">Abrir</a>
+      ${item.type === "application/pdf" ? `<button class="btn light" type="button" onclick="openDocumentFieldsDialog('${item.id}')">${(item.fields || []).length ? "Editar campos" : "Preparar para Room"}</button>` : ""}
       <button class="btn light document-delete" type="button" onclick="deleteClinicDocument('${item.id}')">Eliminar</button>
     </div>`).join("") : `<div class="empty document-empty">Todavía no hay documentos cargados.</div>`;
 }
@@ -2232,8 +2352,33 @@ function collectVisitDocuments(existing = []) {
   return [...$("#visitDocuments").querySelectorAll('input[type="checkbox"]:checked')].map((input) => {
     const item = state.documents.find((documentItem) => documentItem.id === input.value);
     const previous = prior.get(input.value) || {};
-    return { ...previous, documentId: input.value, name: item?.name || previous.name || "Documento", url: item?.url || previous.url || "", status: previous.status || "pending" };
+    return { ...previous, documentId: input.value, name: item?.name || previous.name || "Documento", url: item?.url || previous.url || "", fields: item?.fields || previous.fields || [], answers: previous.answers || {}, status: previous.status || "pending" };
   });
+}
+
+function openDocumentFieldsDialog(id) {
+  const documentItem = state.documents.find((item) => item.id === id); if (!documentItem) return;
+  $("#documentFieldsId").value = id;
+  $("#documentFieldsTitle").textContent = documentItem.name;
+  $("#documentFieldsBuilder").innerHTML = "";
+  (documentItem.fields?.length ? documentItem.fields : [{ id: uid(), label: "", type: "text", required: false }]).forEach(addDocumentFieldRow);
+  $("#documentFieldsDialog").showModal();
+}
+
+function addDocumentFieldRow(field = {}) {
+  const row = document.createElement("div"); row.className = "form-question-row"; row.dataset.fieldId = field.id || uid();
+  row.innerHTML = `<input class="question-label" placeholder="Nombre del campo" value="${escapeHtml(field.label || "")}" /><select class="question-type"><option value="text" ${field.type === "text" ? "selected" : ""}>Texto corto</option><option value="textarea" ${field.type === "textarea" ? "selected" : ""}>Texto largo</option><option value="yesno" ${field.type === "yesno" ? "selected" : ""}>Sí / No</option><option value="date" ${field.type === "date" ? "selected" : ""}>Fecha</option><option value="number" ${field.type === "number" ? "selected" : ""}>Número</option></select><label><input class="question-required" type="checkbox" ${field.required ? "checked" : ""} /> Obligatorio</label><button type="button" class="icon-btn" title="Eliminar campo" onclick="this.closest('.form-question-row').remove()">⌫</button>`;
+  $("#documentFieldsBuilder").append(row);
+}
+
+async function saveDocumentFields() {
+  const id = $("#documentFieldsId").value; const documentItem = state.documents.find((item) => item.id === id); if (!documentItem) return;
+  const fields = Array.from($$("#documentFieldsBuilder .form-question-row")).map((row) => ({ id: row.dataset.fieldId, label: row.querySelector(".question-label").value.trim(), type: row.querySelector(".question-type").value, required: row.querySelector(".question-required").checked })).filter((field) => field.label);
+  if (!fields.length) return toast("Agrega por lo menos un campo digital.");
+  await getCollectionRef("documents").doc(id).set({ fields, roomReady: true, updatedAt: new Date().toISOString() }, { merge: true });
+  documentItem.fields = fields; documentItem.roomReady = true;
+  recordActivity({ action: "updated", entityType: "document", entityId: id, title: "Documento preparado para Room", detail: `${documentItem.name} · ${fields.length} campo(s)` }).catch(console.error);
+  $("#documentFieldsDialog").close(); renderClinicDocuments(); toast("Versión Room guardada.");
 }
 
 function currentSignatureVisit() {
@@ -2271,7 +2416,8 @@ function renderSignatureDialog() {
     <button type="button" class="signature-document-item ${item.documentId === activeSignatureDocumentId ? "active" : ""}" onclick="selectSignatureDocument('${item.documentId}')">
       <span>${item.status === "signed" ? "✓" : "○"}</span><div><strong>${escapeHtml(item.name)}</strong><small>${item.status === "signed" ? `Firmado ${fmtDate(item.signedAt)}` : "Pendiente de firma"}</small></div>
     </button>`).join("");
-  $("#signatureDocumentContext").innerHTML = `<div><small>Documento seleccionado</small><strong>${escapeHtml(documentItem.name)}</strong></div>${documentItem.url ? `<a class="btn light" href="${escapeHtml(documentItem.url)}" target="_blank" rel="noopener">Abrir documento</a>` : ""}`;
+  const completedFields = (documentItem.fields || []).filter((field) => documentItem.answers?.[field.id]);
+  $("#signatureDocumentContext").innerHTML = `<div><small>Documento seleccionado</small><strong>${escapeHtml(documentItem.name)}</strong></div>${documentItem.url ? `<a class="btn light" href="${escapeHtml(documentItem.url)}" target="_blank" rel="noopener">Abrir documento</a>` : ""}${completedFields.length ? `<div class="document-answer-summary">${completedFields.map((field) => `<span><small>${escapeHtml(field.label)}</small><strong>${escapeHtml(documentItem.answers[field.id])}</strong></span>`).join("")}</div>` : ""}`;
   const preview = $("#savedSignaturePreview");
   preview.classList.toggle("hidden", documentItem.status !== "signed");
   preview.innerHTML = documentItem.status === "signed" ? `<small>Firma guardada</small><img src="${escapeHtml(documentItem.signatureUrl)}" alt="Firma de ${escapeHtml(documentItem.signedBy)}" /><strong>${escapeHtml(documentItem.signedBy)}</strong><span>${new Date(documentItem.signedAt).toLocaleString("es-US")}</span>` : "";
@@ -2451,7 +2597,7 @@ function renderWaitlist() {
 }
 
 function openWaitlistDialog() {
-  renderVisitOptions(); $("#waitlistPatient").innerHTML = state.patients.map((p) => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join(""); $("#waitlistId").value = ""; $("#waitlistDateFrom").value = localDateValue(); $("#waitlistDateTo").value = ""; $("#waitlistTimePreference").value = "any"; $("#waitlistDoctor").value = $("#appointmentDoctorFilter").value || ""; $("#waitlistNotes").value = ""; $("#waitlistDialog").showModal();
+  renderVisitOptions(); $("#waitlistPatient").innerHTML = state.patients.map((p) => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join(""); enablePatientSelectSearch($("#waitlistPatient")); $("#waitlistId").value = ""; $("#waitlistDateFrom").value = localDateValue(); $("#waitlistDateTo").value = ""; $("#waitlistTimePreference").value = "any"; $("#waitlistDoctor").value = $("#appointmentDoctorFilter").value || ""; $("#waitlistNotes").value = ""; $("#waitlistDialog").showModal();
 }
 
 async function saveWaitlist() {
@@ -2486,8 +2632,12 @@ function openPaymentDialog(visitId = "", patientId = "") {
   if (!eligible.length) { toast("No hay facturas con balance pendiente."); return; }
   $("#paymentVisit").innerHTML = eligible.map((visit) => `<option value="${visit.id}">${escapeHtml(patient(visit.patientId)?.name || "Paciente")} · ${escapeHtml(invoiceNumber(visit))} · ${money(balance(visit))}</option>`).join("");
   $("#paymentVisit").value = eligible.some((visit) => visit.id === visitId) ? visitId : eligible[0].id;
-  $("#paymentDate").value = new Date().toISOString().slice(0, 16);
+  [...$("#paymentVisit").options].forEach((option) => { option.dataset.patientId = state.visits.find((visit) => visit.id === option.value)?.patientId || ""; });
+  enablePatientSelectSearch($("#paymentVisit"), { placeholder: "Buscar paciente o factura...", ariaLabel: "Buscar paciente o factura pendiente" });
+  $("#paymentDate").value = localDateTimeValue(new Date());
   $("#paymentAmount").value = "";
+  $("#paymentCardType").value = "";
+  $("#paymentCardLast4").value = "";
   $("#paymentReference").value = "";
   $("#paymentNote").value = "";
   updatePaymentContext();
@@ -2502,6 +2652,7 @@ function updatePaymentContext() {
   const insured = paymentType(visit) === "insurance";
   $("#paymentSource").value = insured ? "insurance" : "patient";
   $("#paymentMethod").value = insured ? "insurance_eft" : "cash";
+  togglePaymentCardFields();
   $("#paymentAmount").max = balance(visit).toFixed(2);
   $("#paymentContext").innerHTML = `<div><small>Paciente</small><strong>${escapeHtml(p?.name || "Paciente")}</strong></div><div><small>Factura</small><strong>${escapeHtml(invoiceNumber(visit))}</strong></div><div><small>Balance actual</small><strong>${money(balance(visit))}</strong></div>`;
 }
@@ -2529,6 +2680,7 @@ function openPatientDialog(p = null) {
   $("#patientName").value = p?.name || "";
   $("#patientPhone").value = p?.phone || "";
   $("#patientEmail").value = p?.email || "";
+  $("#patientAddress").value = p?.address || "";
   $("#patientAge").value = p?.age ?? "";
   $("#patientBirthDate").value = p?.birthDate || "";
   $("#patientBirthDate").max = today();
@@ -2567,7 +2719,7 @@ function openVisitDialog(visit = null) {
   $("#visitId").value = visit?.id || "";
   $("#visitPatient").value = visit?.patientId || state.patients[0].id;
   $("#visitType").value = visit?.type || "Presencial";
-  $("#visitDate").value = visit?.date || new Date().toISOString().slice(0, 16);
+  $("#visitDate").value = visit?.date || localDateTimeValue(new Date());
   $("#visitDoctor").value = visit?.doctor || "";
   renderRoomOptions();
   $("#visitRoom").value = visit?.roomId || "";
@@ -2831,6 +2983,7 @@ window.openPatientRecord = openPatientRecord;
 window.selectPatientRecordTab = selectPatientRecordTab;
 window.openTaskDialog = openTaskDialog; window.toggleTask = toggleTask; window.deleteTask = deleteTask;
 window.openFormTemplateDialog = openFormTemplateDialog; window.deleteFormTemplate = deleteFormTemplate;
+window.openDocumentFieldsDialog = openDocumentFieldsDialog;
 window.assignDigitalForm = assignDigitalForm; window.createPatientFormResponse = createPatientFormResponse; window.openPatientDigitalForm = openPatientDigitalForm;
 window.openCommunicationDialog = openCommunicationDialog;
 window.openClinicalRecordDialog = openClinicalRecordDialog;
@@ -2898,6 +3051,11 @@ $("#expenseCreateBtn").addEventListener("click", openExpenseDialog); $("#cashClo
 $("#printBillingBtn").addEventListener("click", printBillingReport);
 $("#downloadBillingPdfBtn").addEventListener("click", downloadBillingPdf);
 $("#paymentVisit").addEventListener("change", updatePaymentContext);
+$("#paymentMethod").addEventListener("change", togglePaymentCardFields);
+$("#paymentCardLast4").addEventListener("input", (event) => {
+  event.target.value = event.target.value.replace(/\D/g, "").slice(0, 4);
+  setFieldError(event.target, $("#paymentCardLast4Error"), "");
+});
 $("#patientFinancePaymentBtn").addEventListener("click", () => {
   $("#patientFinanceDialog").close();
   openPaymentDialog("", activeFinancePatientId);
@@ -3008,10 +3166,14 @@ $("#paymentForm").addEventListener("submit", async (event) => {
   event.preventDefault();
   const visit = state.visits.find((item) => item.id === $("#paymentVisit").value);
   const amount = Number($("#paymentAmount").value || 0);
+  const method = $("#paymentMethod").value;
+  const cardLast4 = $("#paymentCardLast4").value.replace(/\D/g, "");
   const message = !visit ? "Selecciona una factura." : amount <= 0 ? "Indica un monto mayor que cero." : amount > balance(visit) ? "El pago no puede superar el balance pendiente." : "";
+  const cardMessage = method === "card" && cardLast4.length !== 4 ? "Escribe exactamente los últimos 4 dígitos." : "";
   setFieldError($("#paymentAmount"), $("#paymentAmountError"), message);
-  if (message) return;
-  const entry = { id: uid(), visitId: visit.id, patientId: visit.patientId, source: $("#paymentSource").value, amount, method: $("#paymentMethod").value, date: $("#paymentDate").value, reference: $("#paymentReference").value.trim(), note: $("#paymentNote").value.trim(), createdAt: new Date().toISOString() };
+  setFieldError($("#paymentCardLast4"), $("#paymentCardLast4Error"), cardMessage);
+  if (message || cardMessage || (method === "card" && !$("#paymentCardType").value)) return;
+  const entry = { id: uid(), visitId: visit.id, patientId: visit.patientId, source: $("#paymentSource").value, amount, method, cardType: method === "card" ? $("#paymentCardType").value : "", cardLast4: method === "card" ? cardLast4 : "", date: $("#paymentDate").value, reference: $("#paymentReference").value.trim(), note: $("#paymentNote").value.trim(), createdAt: new Date().toISOString() };
   try {
     await registerPayment(entry, visit);
     const sourceField = entry.source === "insurance" ? "insurancePaid" : "patientPaid";
@@ -3041,6 +3203,7 @@ $("#patientForm").addEventListener("submit", async (event) => {
     name: $("#patientName").value.trim(),
     phone: $("#patientPhone").value.trim(),
     email: $("#patientEmail").value.trim().toLowerCase(),
+    address: $("#patientAddress").value.trim(),
     age: $("#patientAge").value,
     birthDate: $("#patientBirthDate").value,
     language: $("#patientLanguage").value,
@@ -3167,6 +3330,17 @@ $("#settingsForm").addEventListener("submit", async (event) => {
   }
 });
 
+$("#addDoctorBtn").addEventListener("click", addConfiguredDoctor);
+$("#doctorNameInput").addEventListener("keydown", (event) => {
+  if (event.key !== "Enter") return;
+  event.preventDefault();
+  addConfiguredDoctor();
+});
+$("#doctorSettingsList").addEventListener("click", (event) => {
+  const button = event.target.closest("[data-remove-doctor]");
+  if (button) removeConfiguredDoctor(button.dataset.removeDoctor);
+});
+
 $("#clinicLogoInput").addEventListener("change", async (event) => {
   try {
     state.settings.clinicLogo = await readLogoFile(event.target.files[0]);
@@ -3238,6 +3412,8 @@ $("#addTeamMember").addEventListener("click", createTeamMember);
 $("#createFormTemplateBtn").addEventListener("click", () => openFormTemplateDialog());
 $("#addFormQuestionBtn").addEventListener("click", () => addFormQuestionRow());
 $("#formTemplateForm").addEventListener("submit", async (event) => { event.preventDefault(); try { await saveFormTemplateFromDialog(); } catch (error) { console.error(error); toast("No se pudo guardar la plantilla."); } });
+$("#addDocumentFieldBtn").addEventListener("click", () => addDocumentFieldRow());
+$("#documentFieldsForm").addEventListener("submit", async (event) => { event.preventDefault(); try { await saveDocumentFields(); } catch (error) { console.error(error); toast("No se pudo guardar la versión Room."); } });
 $("#patientDigitalForm").addEventListener("submit", async (event) => { event.preventDefault(); try { await savePatientDigitalForm(); } catch (error) { console.error(error); toast("No se pudieron guardar las respuestas."); } });
 $("#communicationForm").addEventListener("submit", async (event) => { event.preventDefault(); try { await saveCommunication(); } catch (error) { console.error(error); toast("No se pudo registrar la comunicación."); } });
 $("#clinicalRecordForm").addEventListener("submit", async (event) => { event.preventDefault(); try { await saveClinicalRecord(); } catch (error) { console.error(error); toast("No se pudo guardar el resumen clínico."); } });

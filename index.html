@@ -574,6 +574,15 @@
           </div>
           <div class="invoice-preview full" id="invoiceStylePreview"></div>
 
+          <div class="settings-section-title full section-spaced"><strong>Médicos de la clínica</strong><small>Administra los profesionales que podrán seleccionarse en citas, consultas y rooms.</small></div>
+          <div class="doctor-settings full">
+            <div class="doctor-create-row">
+              <label>Nombre del médico<input id="doctorNameInput" type="text" placeholder="Ej. Dra. Ana Martínez" /></label>
+              <button class="btn primary" type="button" id="addDoctorBtn">Agregar médico</button>
+            </div>
+            <div id="doctorSettingsList" class="doctor-settings-list"></div>
+          </div>
+
           <div class="settings-section-title full section-spaced"><strong>Configuración de agenda</strong><small>Define horarios disponibles y separación entre citas.</small></div>
           <label>Hora de apertura<input id="scheduleOpenTime" type="time" value="08:00" /></label><label>Hora de cierre<input id="scheduleCloseTime" type="time" value="18:00" /></label><label>Separación entre citas<select id="scheduleBuffer"><option value="0">Sin separación</option><option value="5">5 minutos</option><option value="10">10 minutos</option><option value="15">15 minutos</option></select></label>
           <div class="schedule-weekdays full"><label><input type="checkbox" data-schedule-day="1" checked /> Lunes</label><label><input type="checkbox" data-schedule-day="2" checked /> Martes</label><label><input type="checkbox" data-schedule-day="3" checked /> Miércoles</label><label><input type="checkbox" data-schedule-day="4" checked /> Jueves</label><label><input type="checkbox" data-schedule-day="5" checked /> Viernes</label><label><input type="checkbox" data-schedule-day="6" /> Sábado</label><label><input type="checkbox" data-schedule-day="0" /> Domingo</label></div>
@@ -641,6 +650,9 @@
           <input id="patientEmail" type="email" placeholder="paciente@correo.com" autocomplete="email" />
           <small class="field-hint">Se usará para enviar la felicitación de cumpleaños</small>
           <small class="field-error" id="patientEmailError"></small>
+        </label>
+        <label class="field-group full">Dirección
+          <input id="patientAddress" type="text" placeholder="Calle, ciudad, estado y código postal" autocomplete="street-address" />
         </label>
         <label class="field-group">Edad
           <input id="patientAge" type="number" min="0" max="120" placeholder="Ej. 35" />
@@ -751,9 +763,7 @@
         <label class="field-group required"><span class="field-label">Fecha y hora <b>*</b></span>
           <input id="visitDate" type="datetime-local" required />
         </label>
-        <label class="field-group">Doctor
-          <input id="visitDoctor" type="text" placeholder="Ej. Dra. Ana Martínez" />
-        </label>
+        <label class="field-group">Doctor<select id="visitDoctor"><option value="">Sin doctor asignado</option></select></label>
         <label class="field-group">Room
           <select id="visitRoom"><option value="">Sin room asignado</option></select>
         </label>
@@ -838,7 +848,7 @@
         <label class="field-group required"><span class="field-label">Fecha y hora <b>*</b></span><input id="appointmentDate" type="datetime-local" required /></label>
         <label class="field-group">Duración<select id="appointmentDuration"><option value="15">15 minutos</option><option value="30" selected>30 minutos</option><option value="45">45 minutos</option><option value="60">60 minutos</option><option value="90">90 minutos</option></select></label>
         <label class="field-group">Modalidad<select id="appointmentType"><option>Presencial</option><option>Teleconsulta</option></select></label>
-        <label class="field-group">Profesional<input id="appointmentDoctor" type="text" list="appointmentDoctorOptions" placeholder="Ej. Dra. Ana Martínez" autocomplete="off" /><datalist id="appointmentDoctorOptions"></datalist></label>
+        <label class="field-group">Profesional<select id="appointmentDoctor"><option value="">Sin profesional asignado</option></select><datalist id="appointmentDoctorOptions"></datalist></label>
         <label class="field-group">Room<select id="appointmentRoom"><option value="">Asignar después</option></select></label>
         <label class="field-group">Estado<select id="appointmentStatus"><option value="scheduled">Programada</option><option value="confirmed">Confirmada</option><option value="arrived">En espera</option><option value="completed">Atendida</option><option value="cancelled">Cancelada</option><option value="no_show">No asistió</option></select></label>
         <label class="field-group required full"><span class="field-label">Motivo <b>*</b></span><input id="appointmentReason" type="text" placeholder="Motivo principal de la cita" required /></label>
@@ -868,7 +878,7 @@
       <div class="modal-body"><input id="roomAssignId" type="hidden" /><div class="form-grid">
         <label class="field-group full">Paciente<select id="roomAssignPatient" required></select></label>
         <label class="field-group">Cita<select id="roomAssignAppointment"><option value="">Sin cita vinculada</option></select></label>
-        <label class="field-group">Profesional<input id="roomAssignDoctor" placeholder="Profesional responsable" /></label>
+        <label class="field-group">Profesional<select id="roomAssignDoctor"><option value="">Sin profesional asignado</option></select></label>
         <label class="field-group full">Estado<select id="roomAssignStatus"><option value="waiting">Paciente esperando</option><option value="nursing">Enfermería atendiendo</option><option value="ready">Listo para profesional</option><option value="in_visit">Consulta en curso</option></select></label>
       </div></div>
       <div class="modal-actions"><button type="button" class="btn light" data-close="roomAssignDialog">Cancelar</button><button type="submit" class="btn primary">Asignar paciente</button></div>
@@ -911,6 +921,10 @@
         <label class="field-group required"><span class="field-label">Monto <b>*</b></span><div class="input-prefix"><span>$</span><input id="paymentAmount" type="number" min="0.01" step="0.01" required /></div><small class="field-error" id="paymentAmountError"></small></label>
         <label class="field-group">Método<select id="paymentMethod"><option value="cash">Efectivo</option><option value="card">Tarjeta</option><option value="check">Cheque</option><option value="transfer">Transferencia</option><option value="insurance_eft">EFT de seguro</option><option value="other">Otro</option></select></label>
         <label class="field-group">Fecha<input id="paymentDate" type="datetime-local" required /></label>
+        <div id="paymentCardFields" class="form-grid full hidden">
+          <label class="field-group required"><span class="field-label">Tipo de tarjeta <b>*</b></span><select id="paymentCardType"><option value="">Seleccionar</option><option value="visa">Visa</option><option value="mastercard">Mastercard</option><option value="amex">American Express</option><option value="discover">Discover</option><option value="other">Otra</option></select></label>
+          <label class="field-group required"><span class="field-label">Últimos 4 dígitos <b>*</b></span><input id="paymentCardLast4" type="text" inputmode="numeric" maxlength="4" pattern="[0-9]{4}" placeholder="1234" autocomplete="cc-number" /><small class="field-error" id="paymentCardLast4Error"></small></label>
+        </div>
         <label class="field-group full">Referencia<input id="paymentReference" type="text" placeholder="Recibo, cheque, EFT o confirmación" /></label>
         <label class="field-group full">Nota<textarea id="paymentNote" rows="2" placeholder="Observación opcional"></textarea></label>
       </div></div>
@@ -948,7 +962,7 @@
 
   <dialog id="waitlistDialog">
     <form id="waitlistForm" class="modal compact-modal" method="dialog">
-      <div class="modal-head"><div><small>Agenda</small><h3>Lista de espera</h3></div><button type="button" class="close-btn" data-close="waitlistDialog">×</button></div><div class="modal-body"><input id="waitlistId" type="hidden" /><div class="form-grid"><label class="field-group full">Paciente<select id="waitlistPatient" required></select></label><label class="field-group">Desde<input id="waitlistDateFrom" type="date" required /></label><label class="field-group">Hasta<input id="waitlistDateTo" type="date" /></label><label class="field-group">Preferencia<select id="waitlistTimePreference"><option value="any">Cualquier hora</option><option value="morning">Mañana</option><option value="afternoon">Tarde</option></select></label><label class="field-group">Profesional<input id="waitlistDoctor" list="appointmentDoctorOptions" placeholder="Cualquiera" /></label><label class="field-group full">Motivo / notas<textarea id="waitlistNotes" rows="3"></textarea></label></div></div><div class="modal-actions"><button type="button" class="btn light" data-close="waitlistDialog">Cancelar</button><button type="submit" class="btn primary">Guardar en lista</button></div>
+      <div class="modal-head"><div><small>Agenda</small><h3>Lista de espera</h3></div><button type="button" class="close-btn" data-close="waitlistDialog">×</button></div><div class="modal-body"><input id="waitlistId" type="hidden" /><div class="form-grid"><label class="field-group full">Paciente<select id="waitlistPatient" required></select></label><label class="field-group">Desde<input id="waitlistDateFrom" type="date" required /></label><label class="field-group">Hasta<input id="waitlistDateTo" type="date" /></label><label class="field-group">Preferencia<select id="waitlistTimePreference"><option value="any">Cualquier hora</option><option value="morning">Mañana</option><option value="afternoon">Tarde</option></select></label><label class="field-group">Profesional<select id="waitlistDoctor"><option value="">Cualquier profesional</option></select></label><label class="field-group full">Motivo / notas<textarea id="waitlistNotes" rows="3"></textarea></label></div></div><div class="modal-actions"><button type="button" class="btn light" data-close="waitlistDialog">Cancelar</button><button type="submit" class="btn primary">Guardar en lista</button></div>
     </form>
   </dialog>
 
@@ -1021,6 +1035,18 @@
         <div id="formQuestionsBuilder" class="form-questions-builder"></div>
       </div>
       <div class="modal-actions"><button type="button" class="btn light" data-close="formTemplateDialog">Cancelar</button><button type="submit" class="btn primary">Guardar plantilla</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="documentFieldsDialog">
+    <form id="documentFieldsForm" class="modal wide-modal" method="dialog">
+      <div class="modal-head"><div><small>Documento para Room</small><h3 id="documentFieldsTitle">Configurar campos digitales</h3></div><button type="button" class="close-btn" data-close="documentFieldsDialog">×</button></div>
+      <div class="modal-body">
+        <input id="documentFieldsId" type="hidden" />
+        <div class="form-builder-head"><div><strong>Campos que completará el paciente</strong><small>El PDF se mostrará como referencia y estos campos se guardarán con la firma.</small></div><button id="addDocumentFieldBtn" type="button" class="btn light">+ Agregar campo</button></div>
+        <div id="documentFieldsBuilder" class="form-questions-builder"></div>
+      </div>
+      <div class="modal-actions"><button type="button" class="btn light" data-close="documentFieldsDialog">Cancelar</button><button type="submit" class="btn primary">Guardar versión Room</button></div>
     </form>
   </dialog>
 

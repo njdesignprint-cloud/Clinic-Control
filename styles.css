@@ -3247,3 +3247,18 @@ dialog::backdrop {
   font-weight: 400;
   line-height: 1.4;
 }
+
+.patient-select-search {
+  width: 100%;
+  margin-bottom: 8px;
+}
+
+.doctor-settings { display: grid; gap: 12px; }
+.doctor-create-row { display: grid; grid-template-columns: minmax(220px, 1fr) auto; gap: 12px; align-items: end; }
+.doctor-create-row label { display: grid; gap: 6px; }
+.doctor-settings-list { display: grid; gap: 8px; }
+.doctor-setting-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+.doctor-setting-row span { font-weight: 700; }
+@media (max-width: 650px) { .doctor-create-row { grid-template-columns: 1fr; } }
+
+.kiosk-document-preview { width: 100%; min-height: 65vh; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
