@@ -65,32 +65,23 @@ function detectedRoomFields(document) {
       if (/(?:check|select|mark|marque|seleccione).{0,30}(?:apply|correspond)/i.test(text)) { checkboxSection = true; return; }
       if (checkboxSection && /(?:statement|declaration|consentimiento|signature|firma)/i.test(text)) checkboxSection = false;
       if (checkboxSection && text.length <= 90 && !/:$/.test(text)) {
-        const lineBox = normalizedBox(line.layout); const checkboxBox = lineBox ? { x: Math.max(0, lineBox.x - Math.max(0.014, lineBox.height)), y: lineBox.y, width: Math.max(0.014, lineBox.height), height: lineBox.height } : null;
+        const lineBox = normalizedBox(line.layout); const checkboxBox = lineBox ? { x: lineBox.x, y: lineBox.y, width: Math.max(0.014, lineBox.height), height: lineBox.height } : null;
         fields.push({ id: `auto-check-${pageIndex + 1}-${lineIndex + 1}`, label: text.replace(/^[☐□☑✓]\s*/, "").trim(), type: "yesno", required: false, page: pageIndex + 1, box: checkboxBox, placement: "checkbox", confidence: 0.7 });
         return;
       }
       const labeledBlank = /^(.*?):\s*(?:_+|\/?\s*_+|$)/.exec(text);
       if (!labeledBlank) return;
       const label = labeledBlank[1].trim();
-      if (!label || label.length > 100 || /^(?:signature|firma)$/i.test(label)) return;
+      if (!label || label.length > 100 || /^(?:signature|firma)$/i.test(label) || /^(?:I understand that|Entiendo que)$/i.test(label)) return;
       const blankStart = text.indexOf(":") + 1; const nextLabel = text.slice(blankStart).search(/\s+[A-Za-z][A-Za-z '\-/]{1,30}:\s*$/); const end = nextLabel >= 0 ? blankStart + nextLabel : text.length;
-      fields.push({ id: `auto-line-${pageIndex + 1}-${lineIndex + 1}`, label, type: inferredFieldType(label), required: false, page: pageIndex + 1, box: slicedNormalizedBox(line.layout, blankStart / text.length, end / text.length), placement: "blank", confidence: 0.65 });
+      const lineBox = normalizedBox(line.layout); const hasVisibleBlank = /_/.test(text.slice(blankStart)); const targetBox = !hasVisibleBlank && lineBox ? { x: Math.min(0.88, lineBox.x + lineBox.width + 0.006), y: lineBox.y, width: Math.max(0.08, 0.92 - lineBox.x - lineBox.width), height: lineBox.height } : slicedNormalizedBox(line.layout, blankStart / text.length, end / text.length);
+      fields.push({ id: `auto-line-${pageIndex + 1}-${lineIndex + 1}`, label, type: inferredFieldType(label), required: false, page: pageIndex + 1, box: targetBox, placement: "blank", confidence: 0.65 });
     });
   });
   return fields.filter((field, index) => fields.findIndex((candidate) => candidate.label.toLowerCase() === field.label.toLowerCase() && candidate.page === field.page) === index).slice(0, 100);
 }
 
-function wrappedPdfLines(text, font, size, maxWidth) {
-  const words = String(text || "").split(/\s+/).filter(Boolean); const lines = []; let line = "";
-  for (const word of words) {
-    const next = line ? `${line} ${word}` : word;
-    if (font.widthOfTextAtSize(next, size) <= maxWidth || !line) line = next;
-    else { lines.push(line); line = word; }
-  }
-  if (line) lines.push(line); return lines;
-}
-
-async function createCompletedPdf({ source, fields, answers, signatureBytes, signedBy, signedAt, title }) {
+async function createCompletedPdf({ source, fields, answers, signatureBytes }) {
   const pdf = await PDFDocument.load(source); const font = await pdf.embedFont(StandardFonts.Helvetica); const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
   for (const field of fields || []) {
     if (field.type === "signature") continue;
@@ -98,24 +89,11 @@ async function createCompletedPdf({ source, fields, answers, signatureBytes, sig
     const { width, height } = page.getSize(); const box = field.box; const x = Math.max(8, box.x * width + 2); const boxWidth = Math.max(16, box.width * width); const boxHeight = Math.max(11, box.height * height); const y = Math.max(8, height - (box.y + box.height) * height + 2);
     if (field.type === "yesno") { if (/^(?:sí|si|yes|true)$/i.test(answer)) page.drawText("X", { x, y, size: Math.min(12, boxHeight), font: bold, color: rgb(0, 0, 0) }); continue; }
     page.drawRectangle({ x: x - 1, y: y - 1, width: boxWidth + 2, height: Math.min(13, boxHeight + 2), color: rgb(1, 1, 1) });
-    page.drawText(answer.slice(0, 180), { x, y, size: Math.min(9, Math.max(7, boxHeight * 0.65)), font, color: rgb(0, 0, 0), maxWidth: boxWidth });
+    const printable = answer.slice(0, 180); const naturalWidth = Math.max(1, font.widthOfTextAtSize(printable, 1)); const fontSize = Math.min(9, Math.max(6, boxWidth / naturalWidth));
+    page.drawText(printable, { x, y, size: fontSize, font, color: rgb(0, 0, 0) });
   }
   const signatureField = (fields || []).find((field) => field.type === "signature" && field.box); const signature = await pdf.embedPng(signatureBytes);
   if (signatureField) { const signaturePage = pdf.getPages()[Number(signatureField.page || 1) - 1]; if (signaturePage) { const size = signaturePage.getSize(); const box = signatureField.box; const targetWidth = Math.max(90, box.width * size.width); const targetHeight = Math.max(35, box.height * size.height * 2.5); const scale = Math.min(targetWidth / signature.width, targetHeight / signature.height); signaturePage.drawImage(signature, { x: box.x * size.width, y: size.height - (box.y + box.height) * size.height - 4, width: signature.width * scale, height: signature.height * scale }); } }
-  let page = pdf.addPage(); let { width, height } = page.getSize(); let y = height - 54;
-  page.drawText("Documento completado y firmado", { x: 42, y, size: 17, font: bold }); y -= 25;
-  page.drawText(String(title || "Documento"), { x: 42, y, size: 11, font, maxWidth: width - 84 }); y -= 30;
-  for (const field of fields || []) {
-    const answer = String(answers?.[field.id] || "").trim(); if (!answer) continue;
-    const lines = wrappedPdfLines(`${field.label}: ${answer}`, font, 10, width - 84);
-    if (y - lines.length * 14 < 150) { page = pdf.addPage(); ({ width, height } = page.getSize()); y = height - 48; }
-    for (const line of lines) { page.drawText(line, { x: 42, y, size: 10, font }); y -= 14; } y -= 4;
-  }
-  if (y < 150) { page = pdf.addPage(); ({ width, height } = page.getSize()); y = height - 48; }
-  page.drawText(`Firmado por: ${signedBy}`, { x: 42, y: y - 10, size: 11, font: bold });
-  page.drawText(`Fecha: ${new Date(signedAt).toLocaleString("es-US", { timeZone: TIME_ZONE })}`, { x: 42, y: y - 28, size: 9, font });
-  const scale = Math.min(180 / signature.width, 70 / signature.height, 1); page.drawImage(signature, { x: 42, y: y - 108, width: signature.width * scale, height: signature.height * scale });
-  page.drawText("Firma electrónica aceptada y almacenada con este registro.", { x: 42, y: y - 125, size: 8, font, color: rgb(0.3, 0.3, 0.3) });
   return Buffer.from(await pdf.save());
 }
 
@@ -320,7 +298,7 @@ exports.patientPortal = onRequest({ region: "us-central1", cors: false, timeoutS
         try {
           const [source] = await bucket.file(sourcePath).download();
           if (!completedFields.some((field) => field.placement === "signature") || completedFields.some((field) => field.box && !field.placement)) { const [analysis] = await documentAiClient.processDocument({ name: FORM_PROCESSOR_NAME, rawDocument: { content: source.toString("base64"), mimeType: "application/pdf" } }); completedFields = detectedRoomFields(analysis.document || {}); }
-          const completed = await createCompletedPdf({ source, fields: completedFields, answers, signatureBytes: Buffer.from(match[1], "base64"), signedBy, signedAt, title: doc.name });
+          const completed = await createCompletedPdf({ source, fields: completedFields, answers, signatureBytes: Buffer.from(match[1], "base64") });
           const completedToken = crypto.randomUUID(); completedPdfPath = `clinics/${session.clinicId}/completed-documents/${item.visitId}/${item.documentId}/${completedToken}.pdf`; await bucket.file(completedPdfPath).save(completed, { metadata: { contentType: "application/pdf", contentDisposition: `inline; filename="${String(doc.name || "documento.pdf").replace(/[^a-zA-Z0-9._ -]/g, "")}"`, metadata: { firebaseStorageDownloadTokens: completedToken } } });
           completedPdfUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(completedPdfPath)}?alt=media&token=${completedToken}`;
         } catch (pdfError) { logger.error("Could not create completed PDF", { clinicId: session.clinicId, visitId: item.visitId, documentId: item.documentId, message: pdfError.message }); }
