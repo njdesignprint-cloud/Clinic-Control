@@ -212,8 +212,8 @@ exports.patientPortal = onRequest({ region: "us-central1", cors: false, timeoutS
       const [pdfBuffer] = await getStorage().bucket().file(documentItem.path).download();
       const [result] = await documentAiClient.processDocument({ name: FORM_PROCESSOR_NAME, rawDocument: { content: pdfBuffer.toString("base64"), mimeType: "application/pdf" } });
       const fields = detectedRoomFields(result.document || {});
-      await documentRef.set({ fields, roomReady: fields.length > 0, analysisStatus: fields.length ? "completed" : "needs_review", analyzedAt: new Date().toISOString(), analyzer: "google-document-ai-form-parser" }, { merge: true });
-      return response.json({ fields, roomReady: fields.length > 0 });
+      await documentRef.set({ fields, roomReady: true, analysisStatus: fields.length ? "completed" : "signature_only", analyzedAt: new Date().toISOString(), analyzer: "google-document-ai-form-parser" }, { merge: true });
+      return response.json({ fields, roomReady: true });
     }
 
     const { ref, session } = await loadPortalSession(request.body?.code);

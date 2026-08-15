@@ -609,10 +609,10 @@ async function analyzeClinicDocument(id, openReview = true) {
   const idToken = await auth.currentUser.getIdToken();
   const response = await fetch(endpoint, { method: "POST", headers: { "Authorization": `Bearer ${idToken}`, "Content-Type": "application/json" }, body: JSON.stringify({ action: "analyzeDocument", clinicId: activeClinicId, documentId: id }) });
   const result = await response.json().catch(() => ({})); if (!response.ok) throw new Error(result.error || "document-analysis-failed");
-  documentItem.fields = result.fields || []; documentItem.roomReady = Boolean(result.roomReady); documentItem.analysisStatus = result.roomReady ? "completed" : "needs_review";
+  documentItem.fields = result.fields || []; documentItem.roomReady = Boolean(result.roomReady); documentItem.analysisStatus = result.fields?.length ? "completed" : "signature_only";
   renderClinicDocuments();
-  toast(result.fields?.length ? `${result.fields.length} campo(s) detectados automáticamente.` : "No se detectaron campos; revisa el documento.");
-  if (openReview) openDocumentFieldsDialog(id);
+  if (openReview && result.fields?.length) openDocumentFieldsDialog(id);
+  toast(result.fields?.length ? `${result.fields.length} campo(s) detectados automáticamente.` : "Documento listo para Room: no requiere campos, solo revisión y firma.");
 }
 
 async function deleteClinicDocument(id) {
@@ -836,7 +836,10 @@ function toast(message) {
   node.textContent = message;
   node.classList.add("show");
   if (typeof node.showPopover === "function") {
-    try { node.showPopover(); } catch { /* Already visible in the top layer. */ }
+    requestAnimationFrame(() => {
+      try { if (node.matches(":popover-open")) node.hidePopover(); } catch { /* Ignore stale popover state. */ }
+      try { node.showPopover(); } catch { /* The page may be closing. */ }
+    });
   } else {
     const openDialog = [...document.querySelectorAll("dialog[open]")].at(-1);
     if (openDialog && node.parentElement !== openDialog) openDialog.append(node);
@@ -2358,9 +2361,9 @@ function renderClinicDocuments() {
   box.innerHTML = state.documents.length ? state.documents.map((item) => `
     <div class="document-row">
       <span class="document-icon">${item.type === "application/pdf" ? "PDF" : "DOC"}</span>
-      <div><strong>${escapeHtml(item.name)}</strong><small>${formatFileSize(item.size)} · ${(item.fields || []).length ? `${item.fields.length} campo(s) digitales · Listo para Room` : "Disponible para firma"}</small></div>
+      <div><strong>${escapeHtml(item.name)}</strong><small>${formatFileSize(item.size)} · ${(item.fields || []).length ? `${item.fields.length} campo(s) digitales · Listo para Room` : item.roomReady ? "Listo para Room · Revisión y firma" : "Disponible para firma"}</small></div>
       <a class="btn light" href="${escapeHtml(item.url)}" target="_blank" rel="noopener">Abrir</a>
-      ${item.type === "application/pdf" ? `<button class="btn light" type="button" onclick="${(item.fields || []).length ? `openDocumentFieldsDialog('${item.id}')` : `analyzeClinicDocument('${item.id}')`}">${(item.fields || []).length ? "Revisar campos" : "Convertir automáticamente"}</button>` : ""}
+      ${item.type === "application/pdf" ? `<button class="btn light" type="button" onclick="${(item.fields || []).length ? `openDocumentFieldsDialog('${item.id}')` : `analyzeClinicDocument('${item.id}')`}">${(item.fields || []).length ? "Revisar campos" : item.roomReady ? "Reanalizar" : "Convertir automáticamente"}</button>` : ""}
       <button class="btn light document-delete" type="button" onclick="deleteClinicDocument('${item.id}')">Eliminar</button>
     </div>`).join("") : `<div class="empty document-empty">Todavía no hay documentos cargados.</div>`;
 }
