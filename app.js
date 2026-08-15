@@ -1439,6 +1439,7 @@ async function assignRoomLibraryDocument(documentId, room, patientItem) {
   const appointment = state.appointments.find((item) => item.id === room.appointmentId);
   let visit = state.visits.find((item) => item.id === appointment?.visitId)
     || [...state.visits].filter((item) => item.patientId === patientItem.id && item.roomId === room.id && item.status !== "Cancelada").sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0))[0];
+  if ((visit?.documents || []).some((item) => item.documentId === documentId && item.status === "signed")) visit = null;
   if (!visit) {
     const id = uid(); const now = new Date().toISOString();
     visit = { id, patientId: patientItem.id, type: "Presencial", date: now, doctor: room.doctor || appointment?.doctor || "", roomId: room.id, roomName: room.name, status: "Programada", reason: appointment?.reason || "Documentos de Room", notes: "", lineItems: [], total: 0, paid: 0, patientPaid: 0, insurancePaid: 0, documents: [], appointmentId: appointment?.id || "", createdAt: now, updatedAt: now };
@@ -3083,7 +3084,7 @@ $("#roomRefreshBtn").addEventListener("click", renderRooms);
 $("#roomAssignPatient").addEventListener("change", renderRoomAppointmentChoices);
 $("#roomForm").addEventListener("submit", async (event) => { event.preventDefault(); try { await saveRoomFromDialog(); } catch (error) { console.error(error); toast("No se pudo guardar el room."); } });
 $("#roomAssignForm").addEventListener("submit", async (event) => { event.preventDefault(); try { await assignRoomFromDialog(); } catch (error) { console.error(error); toast("No se pudo asignar el room."); } });
-$("#ipadLaunchForm").addEventListener("submit", async (event) => { event.preventDefault(); try { await startPatientKiosk(); } catch (error) { console.error(error); toast("No se pudo iniciar la pantalla del paciente."); } });
+$("#ipadLaunchForm").addEventListener("submit", async (event) => { event.preventDefault(); try { await startPatientKiosk(); } catch (error) { console.error(error); toast(error.message === "no-activities" ? "El documento ya estaba firmado. Cierra esta ventana y vuelve a seleccionarlo para crear una copia nueva." : "No se pudo iniciar la pantalla del paciente."); } });
 $("#ipadCreateTemplateBtn").addEventListener("click", () => { pendingRoomIpadId = $("#ipadRoomId").value; $("#ipadLaunchDialog").close(); openFormTemplateDialog(); });
 $("#copyPatientPortalBtn").addEventListener("click", async () => { await navigator.clipboard.writeText($("#patientPortalUrl").value); toast("Enlace del Portal de Room copiado."); });
 $("#openPatientPortalBtn").addEventListener("click", () => window.open($("#patientPortalUrl").value, "_blank", "noopener"));
