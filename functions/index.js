@@ -5,12 +5,46 @@ const { initializeApp } = require("firebase-admin/app");
 const { getAuth } = require("firebase-admin/auth");
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
 const { getStorage } = require("firebase-admin/storage");
+const { DocumentProcessorServiceClient } = require("@google-cloud/documentai").v1;
 const crypto = require("crypto");
 
 initializeApp();
 
 const db = getFirestore();
 const TIME_ZONE = "America/Chicago";
+const FORM_PROCESSOR_NAME = "projects/713626078372/locations/us/processors/4464ec76cb66d404";
+const documentAiClient = new DocumentProcessorServiceClient({ apiEndpoint: "us-documentai.googleapis.com" });
+
+function documentText(document, layout) {
+  return (layout?.textAnchor?.textSegments || []).map((segment) => document.text.substring(Number(segment.startIndex || 0), Number(segment.endIndex || 0))).join("").trim();
+}
+
+function normalizedBox(layout) {
+  const vertices = layout?.boundingPoly?.normalizedVertices || [];
+  if (!vertices.length) return null;
+  const xs = vertices.map((vertex) => Number(vertex.x || 0)); const ys = vertices.map((vertex) => Number(vertex.y || 0));
+  return { x: Math.min(...xs), y: Math.min(...ys), width: Math.max(...xs) - Math.min(...xs), height: Math.max(...ys) - Math.min(...ys) };
+}
+
+function inferredFieldType(label, valueType = "") {
+  const text = String(label || "").toLowerCase();
+  if (String(valueType).toLowerCase().includes("checkbox") || /(?:sí|si|no|acepto|marque|seleccione)/i.test(text)) return "yesno";
+  if (/(?:fecha|date|nacimiento)/i.test(text)) return "date";
+  if (/(?:cantidad|edad|número|numero|peso|altura)/i.test(text)) return "number";
+  if (/(?:comentario|explique|describa|historial|dirección|direccion|motivo|observación|observacion)/i.test(text)) return "textarea";
+  return "text";
+}
+
+function detectedRoomFields(document) {
+  const fields = [];
+  (document.pages || []).forEach((page, pageIndex) => (page.formFields || []).forEach((formField, fieldIndex) => {
+    const label = documentText(document, formField.fieldName?.layout).replace(/[:_\s]+$/, "").trim();
+    if (!label) return;
+    const valueLayout = formField.fieldValue?.layout;
+    fields.push({ id: `auto-${pageIndex + 1}-${fieldIndex + 1}`, label: label.slice(0, 180), type: inferredFieldType(label, formField.fieldValue?.valueType), required: false, page: pageIndex + 1, box: normalizedBox(valueLayout || formField.fieldName?.layout), confidence: Number(formField.fieldName?.detectedLanguages?.[0]?.confidence || 0) });
+  }));
+  return fields.filter((field, index) => fields.findIndex((candidate) => candidate.label.toLowerCase() === field.label.toLowerCase() && candidate.page === field.page) === index).slice(0, 100);
+}
 
 function datePartsInTimeZone(date = new Date()) {
   const parts = new Intl.DateTimeFormat("en-US", {
@@ -142,7 +176,7 @@ async function loadPortalSession(code) {
   return { ref, session };
 }
 
-exports.patientPortal = onRequest({ region: "us-central1", cors: false, timeoutSeconds: 30, invoker: "public" }, async (request, response) => {
+exports.patientPortal = onRequest({ region: "us-central1", cors: false, timeoutSeconds: 120, invoker: "public" }, async (request, response) => {
   portalCors(response);
   if (request.method === "OPTIONS") return response.status(204).send("");
   if (request.method !== "POST") return response.status(405).json({ error: "method-not-allowed" });
@@ -168,6 +202,18 @@ exports.patientPortal = onRequest({ region: "us-central1", cors: false, timeoutS
       await db.collection("patientPortalSessions").doc(portalKey(code)).set({ clinicId, roomId, patientId, activities: safeActivities, language, completionAction, currentIndex: 0, status: "active", createdBy: user.uid, createdAt: FieldValue.serverTimestamp(), expiresAt });
       await roomSnap.ref.set({ status: roomSnap.data().status === "waiting" ? "nursing" : roomSnap.data().status, portalActive: true, portalExpiresAt: expiresAt, updatedAt: new Date().toISOString() }, { merge: true });
       return response.json({ code, expiresAt: expiresAt.toISOString(), portalUrl: "https://njdesignprint-cloud.github.io/Clinic-Control/patient.html" });
+    }
+
+    if (action === "analyzeDocument") {
+      const { clinicId, documentId } = request.body;
+      await requireClinicUser(request, clinicId);
+      const documentRef = db.doc(`clinics/${clinicId}/documents/${documentId}`); const documentSnap = await documentRef.get(); const documentItem = documentSnap.data();
+      if (!documentSnap.exists || documentItem.type !== "application/pdf" || !documentItem.path) throw new Error("invalid-document");
+      const [pdfBuffer] = await getStorage().bucket().file(documentItem.path).download();
+      const [result] = await documentAiClient.processDocument({ name: FORM_PROCESSOR_NAME, rawDocument: { content: pdfBuffer.toString("base64"), mimeType: "application/pdf" } });
+      const fields = detectedRoomFields(result.document || {});
+      await documentRef.set({ fields, roomReady: fields.length > 0, analysisStatus: fields.length ? "completed" : "needs_review", analyzedAt: new Date().toISOString(), analyzer: "google-document-ai-form-parser" }, { merge: true });
+      return response.json({ fields, roomReady: fields.length > 0 });
     }
 
     const { ref, session } = await loadPortalSession(request.body?.code);

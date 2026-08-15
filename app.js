@@ -593,8 +593,26 @@ async function uploadClinicDocument(file) {
   const ref = storage.ref(path);
   await ref.put(file, { contentType: file.type });
   const url = await ref.getDownloadURL();
-  await getCollectionRef("documents").doc(id).set({ id, name: file.name, type: file.type, size: file.size, path, url, createdAt: new Date().toISOString() });
+  const data = { id, name: file.name, type: file.type, size: file.size, path, url, createdAt: new Date().toISOString() };
+  await getCollectionRef("documents").doc(id).set(data);
   recordActivity({ action: "uploaded", entityType: "document", entityId: id, title: "Documento cargado", detail: file.name }).catch(console.error);
+  if (file.type === "application/pdf") {
+    state.documents = [...state.documents.filter((item) => item.id !== id), data];
+    toast(`Analizando automáticamente ${file.name}...`);
+    try { await analyzeClinicDocument(id, false); } catch (error) { console.error(error); toast(`${file.name} se cargó, pero necesita revisión manual.`); }
+  }
+}
+
+async function analyzeClinicDocument(id, openReview = true) {
+  const documentItem = state.documents.find((item) => item.id === id); if (!documentItem) return;
+  const endpoint = `https://us-central1-${window.firebaseConfig.projectId}.cloudfunctions.net/patientPortal`;
+  const idToken = await auth.currentUser.getIdToken();
+  const response = await fetch(endpoint, { method: "POST", headers: { "Authorization": `Bearer ${idToken}`, "Content-Type": "application/json" }, body: JSON.stringify({ action: "analyzeDocument", clinicId: activeClinicId, documentId: id }) });
+  const result = await response.json().catch(() => ({})); if (!response.ok) throw new Error(result.error || "document-analysis-failed");
+  documentItem.fields = result.fields || []; documentItem.roomReady = Boolean(result.roomReady); documentItem.analysisStatus = result.roomReady ? "completed" : "needs_review";
+  renderClinicDocuments();
+  toast(result.fields?.length ? `${result.fields.length} campo(s) detectados automáticamente.` : "No se detectaron campos; revisa el documento.");
+  if (openReview) openDocumentFieldsDialog(id);
 }
 
 async function deleteClinicDocument(id) {
@@ -2328,7 +2346,7 @@ function renderClinicDocuments() {
       <span class="document-icon">${item.type === "application/pdf" ? "PDF" : "DOC"}</span>
       <div><strong>${escapeHtml(item.name)}</strong><small>${formatFileSize(item.size)} · ${(item.fields || []).length ? `${item.fields.length} campo(s) digitales · Listo para Room` : "Disponible para firma"}</small></div>
       <a class="btn light" href="${escapeHtml(item.url)}" target="_blank" rel="noopener">Abrir</a>
-      ${item.type === "application/pdf" ? `<button class="btn light" type="button" onclick="openDocumentFieldsDialog('${item.id}')">${(item.fields || []).length ? "Editar campos" : "Preparar para Room"}</button>` : ""}
+      ${item.type === "application/pdf" ? `<button class="btn light" type="button" onclick="${(item.fields || []).length ? `openDocumentFieldsDialog('${item.id}')` : `analyzeClinicDocument('${item.id}')`}">${(item.fields || []).length ? "Revisar campos" : "Convertir automáticamente"}</button>` : ""}
       <button class="btn light document-delete" type="button" onclick="deleteClinicDocument('${item.id}')">Eliminar</button>
     </div>`).join("") : `<div class="empty document-empty">Todavía no hay documentos cargados.</div>`;
 }
@@ -2984,6 +3002,7 @@ window.selectPatientRecordTab = selectPatientRecordTab;
 window.openTaskDialog = openTaskDialog; window.toggleTask = toggleTask; window.deleteTask = deleteTask;
 window.openFormTemplateDialog = openFormTemplateDialog; window.deleteFormTemplate = deleteFormTemplate;
 window.openDocumentFieldsDialog = openDocumentFieldsDialog;
+window.analyzeClinicDocument = analyzeClinicDocument;
 window.assignDigitalForm = assignDigitalForm; window.createPatientFormResponse = createPatientFormResponse; window.openPatientDigitalForm = openPatientDigitalForm;
 window.openCommunicationDialog = openCommunicationDialog;
 window.openClinicalRecordDialog = openClinicalRecordDialog;
