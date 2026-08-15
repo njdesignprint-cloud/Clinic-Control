@@ -6,6 +6,7 @@ const { getAuth } = require("firebase-admin/auth");
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
 const { getStorage } = require("firebase-admin/storage");
 const { DocumentProcessorServiceClient } = require("@google-cloud/documentai").v1;
+const { PDFDocument, StandardFonts, rgb } = require("pdf-lib");
 const crypto = require("crypto");
 
 initializeApp();
@@ -64,6 +65,40 @@ function detectedRoomFields(document) {
     });
   });
   return fields.filter((field, index) => fields.findIndex((candidate) => candidate.label.toLowerCase() === field.label.toLowerCase() && candidate.page === field.page) === index).slice(0, 100);
+}
+
+function wrappedPdfLines(text, font, size, maxWidth) {
+  const words = String(text || "").split(/\s+/).filter(Boolean); const lines = []; let line = "";
+  for (const word of words) {
+    const next = line ? `${line} ${word}` : word;
+    if (font.widthOfTextAtSize(next, size) <= maxWidth || !line) line = next;
+    else { lines.push(line); line = word; }
+  }
+  if (line) lines.push(line); return lines;
+}
+
+async function createCompletedPdf({ source, fields, answers, signatureBytes, signedBy, signedAt, title }) {
+  const pdf = await PDFDocument.load(source); const font = await pdf.embedFont(StandardFonts.Helvetica); const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
+  for (const field of fields || []) {
+    const answer = String(answers?.[field.id] || "").trim(); const page = pdf.getPages()[Number(field.page || 1) - 1]; if (!answer || !page || !field.box) continue;
+    const { width, height } = page.getSize(); const box = field.box; const x = Math.min(width - 90, Math.max(10, (box.x + (String(field.id).includes("auto-line") ? box.width : 0)) * width + 4)); const y = Math.max(10, height - (box.y + box.height) * height + 2);
+    page.drawText(answer.slice(0, 180), { x, y, size: 9, font, color: rgb(0.05, 0.18, 0.45), maxWidth: Math.max(80, width - x - 12) });
+  }
+  let page = pdf.addPage(); let { width, height } = page.getSize(); let y = height - 54;
+  page.drawText("Documento completado y firmado", { x: 42, y, size: 17, font: bold }); y -= 25;
+  page.drawText(String(title || "Documento"), { x: 42, y, size: 11, font, maxWidth: width - 84 }); y -= 30;
+  for (const field of fields || []) {
+    const answer = String(answers?.[field.id] || "").trim(); if (!answer) continue;
+    const lines = wrappedPdfLines(`${field.label}: ${answer}`, font, 10, width - 84);
+    if (y - lines.length * 14 < 150) { page = pdf.addPage(); ({ width, height } = page.getSize()); y = height - 48; }
+    for (const line of lines) { page.drawText(line, { x: 42, y, size: 10, font }); y -= 14; } y -= 4;
+  }
+  if (y < 150) { page = pdf.addPage(); ({ width, height } = page.getSize()); y = height - 48; }
+  page.drawText(`Firmado por: ${signedBy}`, { x: 42, y: y - 10, size: 11, font: bold });
+  page.drawText(`Fecha: ${new Date(signedAt).toLocaleString("es-US", { timeZone: TIME_ZONE })}`, { x: 42, y: y - 28, size: 9, font });
+  const signature = await pdf.embedPng(signatureBytes); const scale = Math.min(180 / signature.width, 70 / signature.height, 1); page.drawImage(signature, { x: 42, y: y - 108, width: signature.width * scale, height: signature.height * scale });
+  page.drawText("Firma electrónica aceptada y almacenada con este registro.", { x: 42, y: y - 125, size: 8, font, color: rgb(0.3, 0.3, 0.3) });
+  return Buffer.from(await pdf.save());
 }
 
 function datePartsInTimeZone(date = new Date()) {
@@ -260,8 +295,16 @@ exports.patientPortal = onRequest({ region: "us-central1", cors: false, timeoutS
       const visitRef = clinic.collection("visits").doc(item.visitId); const snap = await visitRef.get(); const visit = snap.data(); const doc = (visit.documents || []).find((entry) => entry.documentId === item.documentId); if (!doc || visit.patientId !== session.patientId) throw new Error("invalid-document");
       const answers = request.body.answers || {}; const missing = (doc.fields || []).find((field) => field.required && !String(answers[field.id] || "").trim()); if (missing) return response.status(400).json({ error: "required", label: missing.label });
       const token = crypto.randomUUID(); const path = `clinics/${session.clinicId}/signatures/${item.visitId}/${item.documentId}/${token}.png`; const file = getStorage().bucket().file(path); await file.save(Buffer.from(match[1], "base64"), { metadata: { contentType: "image/png", metadata: { firebaseStorageDownloadTokens: token } } });
-      const signatureUrl = `https://firebasestorage.googleapis.com/v0/b/${getStorage().bucket().name}/o/${encodeURIComponent(path)}?alt=media&token=${token}`; const signedAt = new Date().toISOString();
-      const documents = visit.documents.map((entry) => entry.documentId === item.documentId ? { ...entry, answers, status: "signed", signedBy, signedAt, signatureUrl, signaturePath: path, consentAccepted: true, signedInRoomId: session.roomId } : entry); await visitRef.update({ documents, updatedAt: signedAt }); await ref.update({ currentIndex: FieldValue.increment(1), updatedAt: FieldValue.serverTimestamp() }); return response.json({ ok: true });
+      const bucket = getStorage().bucket(); const signatureUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(path)}?alt=media&token=${token}`; const signedAt = new Date().toISOString();
+      const librarySnap = await clinic.collection("documents").doc(item.documentId).get(); const sourcePath = librarySnap.data()?.path; let completedPdfUrl = ""; let completedPdfPath = "";
+      if (sourcePath) {
+        try {
+          const [source] = await bucket.file(sourcePath).download(); const completed = await createCompletedPdf({ source, fields: doc.fields || [], answers, signatureBytes: Buffer.from(match[1], "base64"), signedBy, signedAt, title: doc.name });
+          const completedToken = crypto.randomUUID(); completedPdfPath = `clinics/${session.clinicId}/completed-documents/${item.visitId}/${item.documentId}/${completedToken}.pdf`; await bucket.file(completedPdfPath).save(completed, { metadata: { contentType: "application/pdf", contentDisposition: `inline; filename="${String(doc.name || "documento.pdf").replace(/[^a-zA-Z0-9._ -]/g, "")}"`, metadata: { firebaseStorageDownloadTokens: completedToken } } });
+          completedPdfUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(completedPdfPath)}?alt=media&token=${completedToken}`;
+        } catch (pdfError) { logger.error("Could not create completed PDF", { clinicId: session.clinicId, visitId: item.visitId, documentId: item.documentId, message: pdfError.message }); }
+      }
+      const documents = visit.documents.map((entry) => entry.documentId === item.documentId ? { ...entry, answers, status: "signed", signedBy, signedAt, signatureUrl, signaturePath: path, completedPdfUrl, completedPdfPath, consentAccepted: true, signedInRoomId: session.roomId } : entry); await visitRef.update({ documents, updatedAt: signedAt }); await ref.update({ currentIndex: FieldValue.increment(1), updatedAt: FieldValue.serverTimestamp() }); return response.json({ ok: true, completedPdfUrl });
     }
     if (action === "complete") {
       await ref.update({ status: "completed", completedAt: FieldValue.serverTimestamp() }); await clinic.collection("rooms").doc(session.roomId).set({ status: session.completionAction || "ready", portalActive: false, portalExpiresAt: null, updatedAt: new Date().toISOString() }, { merge: true }); return response.json({ ok: true });
